@@ -7,6 +7,7 @@ use bevy_mod_picking::{
     PickingCameraBundle,
     PickingEvent,
     PickingPlugin,
+    SelectionEvent,
 };
 
 const BOARD_HEIGHT: f32 = 0.25;
@@ -14,6 +15,8 @@ const CARD_THICKNESS: f32 = 0.05;
 const CARD_HALF_THICKNESS: f32 = CARD_THICKNESS / 2.0;
 const CARD_HEIGHT: f32 = 3.0;
 const CARD_WIDTH: f32 = 2.0;
+
+const HAND_Z: f32 = 6.0;
 
 fn main() {
     App::new()
@@ -31,6 +34,8 @@ fn main() {
         .add_startup_system(setup)
         .add_system(hover_card_placeholder)
         .add_system(hover_hand)
+        .add_system(pick_from_hand)
+        .add_system(play_card)
         .run();
 }
 
@@ -48,6 +53,9 @@ struct Deck;
 
 #[derive(Component)]
 struct Hand;
+
+#[derive(Component)]
+struct Picked;
 
 fn setup(
     mut commands: Commands,
@@ -150,7 +158,7 @@ fn setup(
             PbrBundle {
                 mesh: mesh.clone(),
                 material: material.clone(),
-                transform: Transform::from_xyz(x, CARD_HALF_THICKNESS, 6.0),
+                transform: Transform::from_xyz(x, CARD_HALF_THICKNESS, HAND_Z),
                 ..default()
             },
             Hand,
@@ -171,8 +179,13 @@ fn hover_card_placeholder(
     materials: Res<CardPlaceholderMaterials>,
     mut ev_pick: EventReader<PickingEvent>,
     mut q_placeholder: Query<&mut Handle<StandardMaterial>, With<CardPlaceholder>>,
+    q_picked: Query<With<Picked>>,
 ) {
     for ev in ev_pick.iter() {
+        if q_picked.iter().next().is_none() {
+            return;
+        }
+
         match ev {
             PickingEvent::Hover(HoverEvent::JustEntered(e)) => {
                 if let Ok(mut material) = q_placeholder.get_mut(*e) {
@@ -191,7 +204,7 @@ fn hover_card_placeholder(
 
 fn hover_hand(
     mut ev_pick: EventReader<PickingEvent>,
-    mut q_hand: Query<&mut Transform, With<Hand>>,
+    mut q_hand: Query<&mut Transform, (With<Hand>, Without<Picked>)>,
 ) {
     for ev in ev_pick.iter() {
         match ev {
@@ -202,10 +215,57 @@ fn hover_hand(
             }
             PickingEvent::Hover(HoverEvent::JustLeft(e)) => {
                 if let Ok(mut transform) = q_hand.get_mut(*e) {
-                    transform.translation.y = 0.0;
+                    transform.translation.y = CARD_HALF_THICKNESS;
                 }
             }
             _ => {}
+        }
+    }
+}
+
+fn pick_from_hand(
+    mut commands: Commands,
+    mut ev_pick: EventReader<PickingEvent>,
+    mut q_hand: Query<&mut Transform, With<Hand>>,
+) {
+    for ev in ev_pick.iter() {
+        match ev {
+            PickingEvent::Selection(SelectionEvent::JustSelected(e)) => {
+                if let Ok(mut transform) = q_hand.get_mut(*e) {
+                    transform.translation.z -= 1.0;
+                    commands.entity(*e).insert(Picked);
+                }
+            }
+            PickingEvent::Selection(SelectionEvent::JustDeselected(e)) => {
+                if let Ok(mut transform) = q_hand.get_mut(*e) {
+                    transform.translation.y = CARD_HALF_THICKNESS;
+                    transform.translation.z = HAND_Z;
+                    commands.entity(*e).remove::<Picked>();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn play_card(
+    mut commands: Commands,
+    placeholder_materials: Res<CardPlaceholderMaterials>,
+    mut ev_pick: EventReader<PickingEvent>,
+    mut q_placeholder: Query<(&Transform, &mut Handle<StandardMaterial>), With<CardPlaceholder>>,
+    mut q_picked: Query<(Entity, &mut Transform), (With<Picked>, Without<CardPlaceholder>)>,
+) {
+    for ev in ev_pick.iter() {
+        if let Ok((picked_entity, mut transform)) = q_picked.get_single_mut() {
+            if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
+                if let Ok((placeholder_transform, mut material)) = q_placeholder.get_mut(*e) {
+                    *material = placeholder_materials.invisable.clone();
+                    transform.translation = placeholder_transform.translation;
+
+                    commands.entity(picked_entity).remove::<Picked>();
+                    commands.entity(picked_entity).remove::<Hand>();
+                }
+            }
         }
     }
 }
