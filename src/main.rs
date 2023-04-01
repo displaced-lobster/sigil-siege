@@ -124,7 +124,16 @@ fn setup(
         }
     }
 
-    let material = materials.add(StandardMaterial {
+    let face_mesh = asset_server.load("models/card-face.glb#Mesh0/Primitive0");
+    let shell_mesh = asset_server.load("models/card-shell.glb#Mesh0/Primitive0");
+    let face_material = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        base_color_texture: Some(asset_server.load("textures/card-face-base.png")),
+        perceptual_roughness: 1.0,
+        reflectance: 0.0,
+        ..default()
+    });
+    let shell_material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
         base_color_texture: Some(asset_server.load("textures/card-base-color.png")),
         perceptual_roughness: 1.0,
@@ -139,31 +148,47 @@ fn setup(
     for i in 0..10 {
         let y = i as f32 * CARD_THICKNESS + CARD_HALF_THICKNESS;
 
-        commands.spawn((
-            PbrBundle {
-                mesh: mesh.clone(),
-                material: material.clone(),
-                transform: Transform::from_xyz(8.0, y, 5.0)
-                    .with_rotation(Quat::from_rotation_z(180.0_f32.to_radians())),
-                ..default()
-            },
-            Deck,
-        ));
+        commands
+            .spawn((
+                PbrBundle {
+                    mesh: face_mesh.clone(),
+                    material: face_material.clone(),
+                    transform: Transform::from_xyz(8.0, y, 5.0)
+                        .with_rotation(Quat::from_rotation_z(180.0_f32.to_radians())),
+                    ..default()
+                },
+                Deck,
+            ))
+            .with_children(|parent| {
+                parent.spawn(PbrBundle {
+                    mesh: shell_mesh.clone(),
+                    material: shell_material.clone(),
+                    ..default()
+                });
+            });
     }
 
     for i in 0..3 {
         let x = i as f32 * CARD_WIDTH - 5.0;
 
-        commands.spawn((
-            PbrBundle {
-                mesh: mesh.clone(),
-                material: material.clone(),
-                transform: Transform::from_xyz(x, CARD_HALF_THICKNESS, HAND_Z),
-                ..default()
-            },
-            Hand,
-            PickableBundle::default(),
-        ));
+        commands
+            .spawn((
+                PbrBundle {
+                    mesh: face_mesh.clone(),
+                    material: face_material.clone(),
+                    transform: Transform::from_xyz(x, CARD_HALF_THICKNESS, HAND_Z),
+                    ..default()
+                },
+                Hand,
+                PickableBundle::default(),
+            ))
+            .with_children(|parent| {
+                parent.spawn(PbrBundle {
+                    mesh: shell_mesh.clone(),
+                    material: shell_material.clone(),
+                    ..default()
+                });
+            });
     }
 
     commands.spawn((
