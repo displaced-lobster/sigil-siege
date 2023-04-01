@@ -8,6 +8,12 @@ use bevy_mod_picking::{
     PickingEvent,
 };
 
+const BOARD_HEIGHT: f32 = 0.25;
+const CARD_THICKNESS: f32 = 0.05;
+const CARD_HALF_THICKNESS: f32 = CARD_THICKNESS / 2.0;
+const CARD_HEIGHT: f32 = 3.0;
+const CARD_WIDTH: f32 = 2.0;
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -81,43 +87,54 @@ fn setup(
         hovered: hovered_material,
     });
 
-    let card_height = 3.0;
-    let card_width = 2.0;
     let card_padding = 1.0;
+    let y = BOARD_HEIGHT + CARD_HALF_THICKNESS;
+    let z_start = 2.0;
 
     for z in 0..2 {
         for x in 0..4 {
-            let z = -(z as f32 * (card_height + card_padding) - 3.5);
-            let x = x as f32 * (card_width + card_padding) - 5.5;
+            let z = z_start - z as f32 * (CARD_HEIGHT + card_padding);
+            let x = x as f32 * (CARD_WIDTH + card_padding) - 4.5;
 
             let entity = commands
                 .spawn((
                     PbrBundle {
                         mesh: mesh.clone(),
                         material: invisable_material.clone(),
-                        transform: Transform::from_xyz(x, 0.0, z),
+                        transform: Transform::from_xyz(x, y, z),
                         ..default()
                     },
                     CardPlaceholder,
                 ))
                 .id();
 
-            if z == 3.5 {
+            if z == z_start {
                 commands.entity(entity).insert(PickableBundle::default());
             }
         }
     }
 
-    let board_thickness = 0.25;
-    let card_thickness = 0.05;
+    let material = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        base_color_texture: Some(asset_server.load("textures/card-base-color.png")),
+        perceptual_roughness: 1.0,
+        metallic: 1.0,
+        metallic_roughness_texture: Some(asset_server.load("textures/card-metallic-roughness.png")),
+        flip_normal_map_y: true,
+        normal_map_texture: Some(asset_server.load("textures/card-normal.png")),
+        reflectance: 0.0,
+        ..default()
+    });
 
     for i in 0..10 {
-        let y = i as f32 * card_thickness - board_thickness;
+        let y = i as f32 * CARD_THICKNESS + CARD_HALF_THICKNESS;
 
         commands.spawn((
             PbrBundle {
                 mesh: mesh.clone(),
-                transform: Transform::from_xyz(7.5, y, 5.5),
+                material: material.clone(),
+                transform: Transform::from_xyz(8.0, y, 5.0)
+                    .with_rotation(Quat::from_rotation_z(180.0_f32.to_radians())),
                 ..default()
             },
             Deck,
@@ -125,12 +142,13 @@ fn setup(
     }
 
     for i in 0..3 {
-        let x = i as f32 * card_width - 5.5;
+        let x = i as f32 * CARD_WIDTH - 5.0;
 
         commands.spawn((
             PbrBundle {
                 mesh: mesh.clone(),
-                transform: Transform::from_xyz(x, 0.0, 7.5),
+                material: material.clone(),
+                transform: Transform::from_xyz(x, CARD_HALF_THICKNESS, 6.0),
                 ..default()
             },
             Hand,
