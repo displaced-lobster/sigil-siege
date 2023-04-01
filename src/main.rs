@@ -1,11 +1,12 @@
 use bevy::{input::common_conditions::input_toggle_active, prelude::*};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_mod_picking::{
-    DefaultPickingPlugins,
     HoverEvent,
+    InteractablePickingPlugin,
     PickableBundle,
     PickingCameraBundle,
     PickingEvent,
+    PickingPlugin,
 };
 
 const BOARD_HEIGHT: f32 = 0.25;
@@ -17,7 +18,8 @@ const CARD_WIDTH: f32 = 2.0;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(DefaultPickingPlugins)
+        .add_plugin(PickingPlugin)
+        .add_plugin(InteractablePickingPlugin)
         .add_plugin(
             WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
         )
