@@ -10,21 +10,20 @@ use bevy_mod_picking::{
     SelectionEvent,
 };
 
-const ATTRIBUTE_HEART_OFFSET: f32 = 1.4;
-const ATTRIBUTE_SCALE: Vec3 = Vec3::new(0.5, 0.5, 0.5);
-const ATTRIBUTE_SWORD_OFFSET: f32 = 1.0;
-const ATTRIBUTE_WIDTH: f32 = 0.4;
-const ATTRIBUTE_X_OFFSET: f32 = 0.6;
-const BOARD_HEIGHT: f32 = 0.25;
-const CARD_THICKNESS: f32 = 0.05;
-const CARD_HALF_THICKNESS: f32 = CARD_THICKNESS / 2.0;
-const CARD_HEIGHT: f32 = 3.0;
-const CARD_WIDTH: f32 = 2.0;
+mod cards;
+mod deck;
+mod states;
 
+use cards::*;
+use deck::*;
+use states::*;
+
+const BOARD_HEIGHT: f32 = 0.25;
 const HAND_Z: f32 = 6.0;
 
 fn main() {
     App::new()
+        .add_state::<GameState>()
         .add_plugins(DefaultPlugins)
         .add_plugin(PickingPlugin)
         .add_plugin(InteractablePickingPlugin)
@@ -37,24 +36,15 @@ fn main() {
             color: Color::rgb(0.63, 0.51, 0.51),
         })
         .add_startup_system(setup)
-        .add_system(hover_card_placeholder)
-        .add_system(hover_hand)
-        .add_system(pick_from_hand)
-        .add_system(play_card)
+        .add_system(setup_board.in_set(OnUpdate(GameState::Setup)))
+        .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(hover_card_placeholder.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(hover_hand.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(mark_cards_to_draw.in_schedule(OnEnter(GameState::PlayerTurn)))
+        .add_system(pick_from_hand.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(play_card.in_set(OnUpdate(GameState::PlayerTurn)))
         .run();
 }
-
-#[derive(Component)]
-struct CardPlaceholder;
-
-#[derive(Resource)]
-struct CardPlaceholderMaterials {
-    invisable: Handle<StandardMaterial>,
-    hovered: Handle<StandardMaterial>,
-}
-
-#[derive(Component)]
-struct Deck;
 
 #[derive(Component)]
 struct Hand;
@@ -62,55 +52,10 @@ struct Hand;
 #[derive(Component)]
 struct Picked;
 
-struct Attributes {
-    attack: u32,
-    health: u32,
-}
-
-enum CardAbility {
-    AttackUpAdjacent,
-    HealthUpAdjacent,
-    HealthUpAll,
-    StrengthInNumbers,
-}
-
-enum CardType {
-    Heart,
-    Pitchfork,
-    Sword,
-    Tower,
-}
-
-impl CardType {
-    fn ability(&self) -> CardAbility {
-        match self {
-            Self::Heart => CardAbility::HealthUpAll,
-            Self::Pitchfork => CardAbility::StrengthInNumbers,
-            Self::Sword => CardAbility::AttackUpAdjacent,
-            Self::Tower => CardAbility::HealthUpAdjacent,
-        }
-    }
-
-    fn attributes(&self) -> Attributes {
-        match self {
-            Self::Heart => Attributes {
-                attack: 1,
-                health: 1,
-            },
-            Self::Pitchfork => Attributes {
-                attack: 1,
-                health: 1,
-            },
-            Self::Sword => Attributes {
-                attack: 2,
-                health: 2,
-            },
-            Self::Tower => Attributes {
-                attack: 1,
-                health: 3,
-            },
-        }
-    }
+#[derive(Resource)]
+struct BoardAssets {
+    material: Handle<StandardMaterial>,
+    mesh: Handle<Mesh>,
 }
 
 fn setup(
@@ -129,14 +74,8 @@ fn setup(
         reflectance: 0.0,
         ..default()
     });
+    commands.insert_resource(BoardAssets { material, mesh });
 
-    commands.spawn(PbrBundle {
-        mesh,
-        material,
-        ..default()
-    });
-
-    let mesh = asset_server.load("models/card.glb#Mesh0/Primitive0");
     let invisable_material = materials.add(StandardMaterial {
         base_color: Color::rgba(0.0, 0.0, 0.0, 0.0),
         alpha_mode: AlphaMode::Add,
@@ -149,36 +88,9 @@ fn setup(
     });
 
     commands.insert_resource(CardPlaceholderMaterials {
-        invisable: invisable_material.clone(),
+        invisable: invisable_material,
         hovered: hovered_material,
     });
-
-    let card_padding = 1.0;
-    let y = BOARD_HEIGHT + CARD_HALF_THICKNESS;
-    let z_start = 2.0;
-
-    for z in 0..2 {
-        for x in 0..4 {
-            let z = z_start - z as f32 * (CARD_HEIGHT + card_padding);
-            let x = x as f32 * (CARD_WIDTH + card_padding) - 4.5;
-
-            let entity = commands
-                .spawn((
-                    PbrBundle {
-                        mesh: mesh.clone(),
-                        material: invisable_material.clone(),
-                        transform: Transform::from_xyz(x, y, z),
-                        ..default()
-                    },
-                    CardPlaceholder,
-                ))
-                .id();
-
-            if z == z_start {
-                commands.entity(entity).insert(PickableBundle::default());
-            }
-        }
-    }
 
     let card_mesh = asset_server.load("models/card.glb#Mesh0/Primitive0");
     let card_material = materials.add(StandardMaterial {
@@ -192,21 +104,6 @@ fn setup(
         reflectance: 0.0,
         ..default()
     });
-
-    for i in 0..10 {
-        let y = i as f32 * CARD_THICKNESS + CARD_HALF_THICKNESS;
-
-        commands.spawn((
-            PbrBundle {
-                mesh: card_mesh.clone(),
-                material: card_material.clone(),
-                transform: Transform::from_xyz(8.0, y, 5.0)
-                    .with_rotation(Quat::from_rotation_z(180.0_f32.to_radians())),
-                ..default()
-            },
-            Deck,
-        ));
-    }
 
     let heart_mesh = asset_server.load("models/heart.glb#Mesh0/Primitive0");
     let pitchfork_mesh = asset_server.load("models/pitchfork.glb#Mesh0/Primitive0");
@@ -224,62 +121,18 @@ fn setup(
         ..default()
     });
 
-    let mesh_materials = [
-        (heart_mesh.clone(), heart_material.clone(), CardType::Heart),
-        (pitchfork_mesh, black_material.clone(), CardType::Pitchfork),
-        (sword_mesh.clone(), black_material.clone(), CardType::Sword),
-        (tower_mesh, black_material.clone(), CardType::Tower),
-    ];
+    commands.insert_resource(CardAssets {
+        card_mesh,
+        card_material,
+        heart_mesh,
+        heart_material,
+        pitchfork_mesh,
+        sword_mesh,
+        tower_mesh,
+        black_material,
+    });
 
-    for (i, (mesh, material, card_type)) in mesh_materials.iter().enumerate() {
-        let x = i as f32 * CARD_WIDTH - 5.0;
-
-        commands
-            .spawn((
-                PbrBundle {
-                    mesh: card_mesh.clone(),
-                    material: card_material.clone(),
-                    transform: Transform::from_xyz(x, CARD_HALF_THICKNESS, HAND_Z),
-                    ..default()
-                },
-                Hand,
-                PickableBundle::default(),
-            ))
-            .with_children(|parent| {
-                parent.spawn(PbrBundle {
-                    mesh: mesh.clone(),
-                    material: material.clone(),
-                    ..default()
-                });
-
-                let attributes = card_type.attributes();
-
-                for i in 0..attributes.health {
-                    let x = i as f32 * ATTRIBUTE_WIDTH - ATTRIBUTE_X_OFFSET;
-
-                    parent.spawn(PbrBundle {
-                        mesh: heart_mesh.clone(),
-                        material: heart_material.clone(),
-                        transform: Transform::from_xyz(x, 0.0, ATTRIBUTE_HEART_OFFSET)
-                            .with_scale(ATTRIBUTE_SCALE),
-                        ..default()
-                    });
-                }
-
-                for i in 0..attributes.attack {
-                    let x = i as f32 * ATTRIBUTE_WIDTH - ATTRIBUTE_X_OFFSET;
-
-                    parent.spawn(PbrBundle {
-                        mesh: sword_mesh.clone(),
-                        material: black_material.clone(),
-                        transform: Transform::from_xyz(x, BOARD_HEIGHT, ATTRIBUTE_SWORD_OFFSET)
-                            .with_scale(ATTRIBUTE_SCALE),
-                        ..default()
-                    });
-                }
-            });
-    }
-
+    commands.insert_resource(PlayerState::default());
     commands.spawn((
         Camera3dBundle {
             transform: Transform::from_xyz(0.0, 15.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -287,6 +140,80 @@ fn setup(
         },
         PickingCameraBundle::default(),
     ));
+}
+
+fn draw_cards(
+    mut commands: Commands,
+    card_assets: Res<CardAssets>,
+    mut player_state: ResMut<PlayerState>,
+    mut q_draw: Query<(Entity, &mut Transform), (With<Draw>, With<Deck>, Without<Hand>)>,
+    q_hand: Query<With<Hand>>,
+) {
+    let hand_size = q_hand.iter().count();
+    let mut x = hand_size as f32 * CARD_WIDTH - 5.0;
+
+    for (entity, mut transform) in q_draw.iter_mut() {
+        if let Some(card_type) = player_state.draw_card() {
+            *transform = Transform::from_xyz(x, CARD_HALF_THICKNESS, HAND_Z);
+            x += CARD_WIDTH;
+
+            let mesh = card_type.mesh(&card_assets);
+            let material = card_type.material(&card_assets);
+            let mut children = Vec::new();
+
+            children.push(
+                commands
+                    .spawn(PbrBundle {
+                        mesh: mesh.clone(),
+                        material: material.clone(),
+                        ..default()
+                    })
+                    .id(),
+            );
+
+            let attributes = card_type.attributes();
+
+            for i in 0..attributes.health {
+                let x = i as f32 * ATTRIBUTE_WIDTH - ATTRIBUTE_X_OFFSET;
+
+                children.push(
+                    commands
+                        .spawn(PbrBundle {
+                            mesh: card_assets.heart_mesh.clone(),
+                            material: card_assets.heart_material.clone(),
+                            transform: Transform::from_xyz(x, 0.0, ATTRIBUTE_HEART_OFFSET)
+                                .with_scale(ATTRIBUTE_SCALE),
+                            ..default()
+                        })
+                        .id(),
+                );
+            }
+
+            for i in 0..attributes.attack {
+                let x = i as f32 * ATTRIBUTE_WIDTH - ATTRIBUTE_X_OFFSET;
+
+                children.push(
+                    commands
+                        .spawn(PbrBundle {
+                            mesh: card_assets.sword_mesh.clone(),
+                            material: card_assets.black_material.clone(),
+                            transform: Transform::from_xyz(x, BOARD_HEIGHT, ATTRIBUTE_SWORD_OFFSET)
+                                .with_scale(ATTRIBUTE_SCALE),
+                            ..default()
+                        })
+                        .id(),
+                );
+            }
+
+            commands
+                .entity(entity)
+                .remove::<Deck>()
+                .remove::<Draw>()
+                .insert(Hand)
+                .insert(PickableBundle::default())
+                .push_children(&children);
+        }
+    }
 }
 
 fn hover_card_placeholder(
@@ -337,6 +264,30 @@ fn hover_hand(
     }
 }
 
+fn mark_cards_to_draw(
+    mut commands: Commands,
+    player_state: Res<PlayerState>,
+    q_deck: Query<(Entity, &Deck), Without<Hand>>,
+    q_hand: Query<With<Hand>>,
+) {
+    let hand_size = q_hand.iter().count() as u32;
+
+    if hand_size >= player_state.max_hand_size {
+        return;
+    }
+
+    let draw_count = player_state.draw_count();
+    let mut sorted_deck = q_deck.iter().collect::<Vec<_>>();
+
+    sorted_deck.sort_by(|(_, deck_a), (_, deck_b)| deck_a.0.partial_cmp(&deck_b.0).unwrap());
+
+    for _ in 0..draw_count {
+        if let Some((entity, __)) = sorted_deck.pop() {
+            commands.entity(entity).insert(Draw);
+        }
+    }
+}
+
 fn pick_from_hand(
     mut commands: Commands,
     mut ev_pick: EventReader<PickingEvent>,
@@ -382,4 +333,63 @@ fn play_card(
             }
         }
     }
+}
+
+fn setup_board(
+    mut commands: Commands,
+    board_assets: Res<BoardAssets>,
+    card_assets: Res<CardAssets>,
+    placeholder_materials: Res<CardPlaceholderMaterials>,
+    player_state: Res<PlayerState>,
+    mut state: ResMut<NextState<GameState>>,
+) {
+    commands.spawn(PbrBundle {
+        mesh: board_assets.mesh.clone(),
+        material: board_assets.material.clone(),
+        ..default()
+    });
+
+    let card_padding = 1.0;
+    let y = BOARD_HEIGHT + CARD_HALF_THICKNESS;
+    let z_start = 2.0;
+
+    for z in 0..2 {
+        for x in 0..4 {
+            let z = z_start - z as f32 * (CARD_HEIGHT + card_padding);
+            let x = x as f32 * (CARD_WIDTH + card_padding) - 4.5;
+
+            let entity = commands
+                .spawn((
+                    PbrBundle {
+                        mesh: card_assets.card_mesh.clone(),
+                        material: placeholder_materials.invisable.clone(),
+                        transform: Transform::from_xyz(x, y, z),
+                        ..default()
+                    },
+                    CardPlaceholder,
+                ))
+                .id();
+
+            if z == z_start {
+                commands.entity(entity).insert(PickableBundle::default());
+            }
+        }
+    }
+
+    for i in 0..player_state.deck_size() {
+        let y = i as f32 * CARD_THICKNESS + CARD_HALF_THICKNESS;
+
+        commands.spawn((
+            PbrBundle {
+                mesh: card_assets.card_mesh.clone(),
+                material: card_assets.card_material.clone(),
+                transform: Transform::from_xyz(8.0, y, 5.0)
+                    .with_rotation(Quat::from_rotation_z(180.0_f32.to_radians())),
+                ..default()
+            },
+            Deck(i),
+        ));
+    }
+
+    state.set(GameState::PlayerTurn);
 }
