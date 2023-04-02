@@ -12,18 +12,27 @@ use bevy_mod_picking::{
 
 mod cards;
 mod deck;
+mod hand;
 mod states;
 
 use cards::*;
 use deck::*;
+use hand::*;
 use states::*;
 
 const BOARD_HEIGHT: f32 = 0.25;
 const HAND_Z: f32 = 6.0;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, SystemSet)]
+enum PlayCardSystemSet {
+    PlayCard,
+    CardPlayed,
+}
+
 fn main() {
     App::new()
         .add_state::<GameState>()
+        .add_event::<CardPlayedEvent>()
         .add_plugins(DefaultPlugins)
         .add_plugin(PickingPlugin)
         .add_plugin(InteractablePickingPlugin)
@@ -37,17 +46,24 @@ fn main() {
         })
         .add_startup_system(setup)
         .add_system(setup_board.in_set(OnUpdate(GameState::Setup)))
+        .add_system(
+            card_played
+                .in_set(PlayCardSystemSet::CardPlayed)
+                .in_set(OnUpdate(GameState::PlayerTurn)),
+        )
         .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_card_placeholder.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_hand.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(mark_cards_to_draw.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(pick_from_hand.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(play_card.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(
+            play_card
+                .in_set(PlayCardSystemSet::PlayCard)
+                .in_set(OnUpdate(GameState::PlayerTurn))
+                .before(PlayCardSystemSet::CardPlayed),
+        )
         .run();
 }
-
-#[derive(Component)]
-struct Hand;
 
 #[derive(Component)]
 struct Picked;
@@ -142,6 +158,17 @@ fn setup(
     ));
 }
 
+fn card_played(
+    mut ev_played: EventReader<CardPlayedEvent>,
+    mut q_hand: Query<(&Hand, &mut Transform)>,
+) {
+    for ev in ev_played.iter() {
+        for (_, mut transform) in q_hand.iter_mut().filter(|(hand, _)| hand.0 > ev.index) {
+            transform.translation.x -= CARD_WIDTH;
+        }
+    }
+}
+
 fn draw_cards(
     mut commands: Commands,
     card_assets: Res<CardAssets>,
@@ -149,7 +176,7 @@ fn draw_cards(
     mut q_draw: Query<(Entity, &mut Transform), (With<Draw>, With<Deck>, Without<Hand>)>,
     q_hand: Query<With<Hand>>,
 ) {
-    let hand_size = q_hand.iter().count();
+    let mut hand_size = q_hand.iter().count() as u32;
     let mut x = hand_size as f32 * CARD_WIDTH - 5.0;
 
     for (entity, mut transform) in q_draw.iter_mut() {
@@ -209,9 +236,11 @@ fn draw_cards(
                 .entity(entity)
                 .remove::<Deck>()
                 .remove::<Draw>()
-                .insert(Hand)
+                .insert(Hand(hand_size))
                 .insert(PickableBundle::default())
                 .push_children(&children);
+
+            hand_size += 1;
         }
     }
 }
@@ -317,16 +346,23 @@ fn play_card(
     mut commands: Commands,
     placeholder_materials: Res<CardPlaceholderMaterials>,
     mut ev_pick: EventReader<PickingEvent>,
+    mut ev_played: EventWriter<CardPlayedEvent>,
     mut q_placeholder: Query<(&Transform, &mut Handle<StandardMaterial>), With<CardPlaceholder>>,
-    mut q_picked: Query<(Entity, &mut Transform), (With<Picked>, Without<CardPlaceholder>)>,
+    mut q_picked: Query<(Entity, &Hand, &mut Transform), (With<Picked>, Without<CardPlaceholder>)>,
 ) {
     for ev in ev_pick.iter() {
-        if let Ok((picked_entity, mut transform)) = q_picked.get_single_mut() {
+        if let Ok((picked_entity, hand, mut transform)) = q_picked.get_single_mut() {
             if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
                 if let Ok((placeholder_transform, mut material)) = q_placeholder.get_mut(*e) {
                     *material = placeholder_materials.invisable.clone();
                     transform.translation = placeholder_transform.translation;
 
+                    let index = hand.0;
+
+                    ev_played.send(CardPlayedEvent {
+                        entity: picked_entity,
+                        index,
+                    });
                     commands.entity(picked_entity).remove::<Picked>();
                     commands.entity(picked_entity).remove::<Hand>();
                 }
