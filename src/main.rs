@@ -10,11 +10,13 @@ use bevy_mod_picking::{
     SelectionEvent,
 };
 
+mod board;
 mod cards;
 mod deck;
 mod hand;
 mod states;
 
+use board::*;
 use cards::*;
 use deck::*;
 use hand::*;
@@ -63,15 +65,6 @@ fn main() {
                 .before(PlayCardSystemSet::CardPlayed),
         )
         .run();
-}
-
-#[derive(Component)]
-struct Picked;
-
-#[derive(Resource)]
-struct BoardAssets {
-    material: Handle<StandardMaterial>,
-    mesh: Handle<Mesh>,
 }
 
 fn setup(
@@ -247,8 +240,9 @@ fn draw_cards(
 
 fn hover_card_placeholder(
     materials: Res<CardPlaceholderMaterials>,
+    board: Res<Board>,
     mut ev_pick: EventReader<PickingEvent>,
-    mut q_placeholder: Query<&mut Handle<StandardMaterial>, With<CardPlaceholder>>,
+    mut q_placeholder: Query<(&CardPlaceholder, &mut Handle<StandardMaterial>)>,
     q_picked: Query<With<Picked>>,
 ) {
     for ev in ev_pick.iter() {
@@ -258,12 +252,14 @@ fn hover_card_placeholder(
 
         match ev {
             PickingEvent::Hover(HoverEvent::JustEntered(e)) => {
-                if let Ok(mut material) = q_placeholder.get_mut(*e) {
-                    *material = materials.hovered.clone();
+                if let Ok((placeholder, mut material)) = q_placeholder.get_mut(*e) {
+                    if board.unoccupied(placeholder.0) {
+                        *material = materials.hovered.clone();
+                    }
                 }
             }
             PickingEvent::Hover(HoverEvent::JustLeft(e)) => {
-                if let Ok(mut material) = q_placeholder.get_mut(*e) {
+                if let Ok((_, mut material)) = q_placeholder.get_mut(*e) {
                     *material = materials.invisable.clone();
                 }
             }
@@ -345,26 +341,32 @@ fn pick_from_hand(
 fn play_card(
     mut commands: Commands,
     placeholder_materials: Res<CardPlaceholderMaterials>,
+    mut board: ResMut<Board>,
     mut ev_pick: EventReader<PickingEvent>,
     mut ev_played: EventWriter<CardPlayedEvent>,
-    mut q_placeholder: Query<(&Transform, &mut Handle<StandardMaterial>), With<CardPlaceholder>>,
+    mut q_placeholder: Query<(&CardPlaceholder, &Transform, &mut Handle<StandardMaterial>)>,
     mut q_picked: Query<(Entity, &Hand, &mut Transform), (With<Picked>, Without<CardPlaceholder>)>,
 ) {
     for ev in ev_pick.iter() {
         if let Ok((picked_entity, hand, mut transform)) = q_picked.get_single_mut() {
             if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
-                if let Ok((placeholder_transform, mut material)) = q_placeholder.get_mut(*e) {
-                    *material = placeholder_materials.invisable.clone();
-                    transform.translation = placeholder_transform.translation;
+                if let Ok((placeholder, placeholder_transform, mut material)) =
+                    q_placeholder.get_mut(*e)
+                {
+                    let index = placeholder.0;
 
-                    let index = hand.0;
+                    if board.unoccupied(index) {
+                        *material = placeholder_materials.invisable.clone();
+                        transform.translation = placeholder_transform.translation;
+                        board.place(index, picked_entity);
 
-                    ev_played.send(CardPlayedEvent {
-                        entity: picked_entity,
-                        index,
-                    });
-                    commands.entity(picked_entity).remove::<Picked>();
-                    commands.entity(picked_entity).remove::<Hand>();
+                        ev_played.send(CardPlayedEvent {
+                            entity: picked_entity,
+                            index: hand.0,
+                        });
+                        commands.entity(picked_entity).remove::<Picked>();
+                        commands.entity(picked_entity).remove::<Hand>();
+                    }
                 }
             }
         }
@@ -391,6 +393,7 @@ fn setup_board(
 
     for z in 0..2 {
         for x in 0..4 {
+            let index = x as u32;
             let z = z_start - z as f32 * (CARD_HEIGHT + card_padding);
             let x = x as f32 * (CARD_WIDTH + card_padding) - 4.5;
 
@@ -402,7 +405,7 @@ fn setup_board(
                         transform: Transform::from_xyz(x, y, z),
                         ..default()
                     },
-                    CardPlaceholder,
+                    CardPlaceholder(index),
                 ))
                 .id();
 
@@ -427,5 +430,6 @@ fn setup_board(
         ));
     }
 
+    commands.insert_resource(Board::new());
     state.set(GameState::PlayerTurn);
 }

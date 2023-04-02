@@ -11,7 +11,7 @@ pub const CARD_HEIGHT: f32 = 3.0;
 pub const CARD_WIDTH: f32 = 2.0;
 
 #[derive(Component)]
-pub struct CardPlaceholder;
+pub struct CardPlaceholder(pub u32);
 
 #[derive(Resource)]
 pub struct CardPlaceholderMaterials {

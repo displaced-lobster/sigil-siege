@@ -7,3 +7,6 @@ pub struct CardPlayedEvent {
 
 #[derive(Component)]
 pub struct Hand(pub u32);
+
+#[derive(Component)]
+pub struct Picked;
