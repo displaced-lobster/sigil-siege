@@ -10,6 +10,11 @@ use bevy_mod_picking::{
     SelectionEvent,
 };
 
+const ATTRIBUTE_HEART_OFFSET: f32 = 1.4;
+const ATTRIBUTE_SCALE: Vec3 = Vec3::new(0.5, 0.5, 0.5);
+const ATTRIBUTE_SWORD_OFFSET: f32 = 1.0;
+const ATTRIBUTE_WIDTH: f32 = 0.4;
+const ATTRIBUTE_X_OFFSET: f32 = 0.6;
 const BOARD_HEIGHT: f32 = 0.25;
 const CARD_THICKNESS: f32 = 0.05;
 const CARD_HALF_THICKNESS: f32 = CARD_THICKNESS / 2.0;
@@ -56,6 +61,41 @@ struct Hand;
 
 #[derive(Component)]
 struct Picked;
+
+struct Attributes {
+    attack: u32,
+    health: u32,
+}
+
+enum CardType {
+    Heart,
+    Pitchfork,
+    Sword,
+    Tower,
+}
+
+impl CardType {
+    fn attributes(&self) -> Attributes {
+        match self {
+            Self::Heart => Attributes {
+                attack: 1,
+                health: 1,
+            },
+            Self::Pitchfork => Attributes {
+                attack: 1,
+                health: 1,
+            },
+            Self::Sword => Attributes {
+                attack: 2,
+                health: 2,
+            },
+            Self::Tower => Attributes {
+                attack: 1,
+                health: 3,
+            },
+        }
+    }
+}
 
 fn setup(
     mut commands: Commands,
@@ -124,16 +164,8 @@ fn setup(
         }
     }
 
-    let face_mesh = asset_server.load("models/card-face.glb#Mesh0/Primitive0");
-    let shell_mesh = asset_server.load("models/card-shell.glb#Mesh0/Primitive0");
-    let face_material = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        base_color_texture: Some(asset_server.load("textures/card-face-base.png")),
-        perceptual_roughness: 1.0,
-        reflectance: 0.0,
-        ..default()
-    });
-    let shell_material = materials.add(StandardMaterial {
+    let card_mesh = asset_server.load("models/card.glb#Mesh0/Primitive0");
+    let card_material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
         base_color_texture: Some(asset_server.load("textures/card-base-color.png")),
         perceptual_roughness: 1.0,
@@ -148,34 +180,49 @@ fn setup(
     for i in 0..10 {
         let y = i as f32 * CARD_THICKNESS + CARD_HALF_THICKNESS;
 
-        commands
-            .spawn((
-                PbrBundle {
-                    mesh: face_mesh.clone(),
-                    material: face_material.clone(),
-                    transform: Transform::from_xyz(8.0, y, 5.0)
-                        .with_rotation(Quat::from_rotation_z(180.0_f32.to_radians())),
-                    ..default()
-                },
-                Deck,
-            ))
-            .with_children(|parent| {
-                parent.spawn(PbrBundle {
-                    mesh: shell_mesh.clone(),
-                    material: shell_material.clone(),
-                    ..default()
-                });
-            });
+        commands.spawn((
+            PbrBundle {
+                mesh: card_mesh.clone(),
+                material: card_material.clone(),
+                transform: Transform::from_xyz(8.0, y, 5.0)
+                    .with_rotation(Quat::from_rotation_z(180.0_f32.to_radians())),
+                ..default()
+            },
+            Deck,
+        ));
     }
 
-    for i in 0..3 {
+    let heart_mesh = asset_server.load("models/heart.glb#Mesh0/Primitive0");
+    let pitchfork_mesh = asset_server.load("models/pitchfork.glb#Mesh0/Primitive0");
+    let sword_mesh = asset_server.load("models/sword.glb#Mesh0/Primitive0");
+    let tower_mesh = asset_server.load("models/tower.glb#Mesh0/Primitive0");
+    let heart_material = materials.add(StandardMaterial {
+        base_color: Color::RED,
+        metallic: 1.0,
+        perceptual_roughness: 0.0,
+        ..default()
+    });
+    let black_material = materials.add(StandardMaterial {
+        base_color: Color::BLACK,
+        perceptual_roughness: 1.0,
+        ..default()
+    });
+
+    let mesh_materials = [
+        (heart_mesh.clone(), heart_material.clone(), CardType::Heart),
+        (pitchfork_mesh, black_material.clone(), CardType::Pitchfork),
+        (sword_mesh.clone(), black_material.clone(), CardType::Sword),
+        (tower_mesh, black_material.clone(), CardType::Tower),
+    ];
+
+    for (i, (mesh, material, card_type)) in mesh_materials.iter().enumerate() {
         let x = i as f32 * CARD_WIDTH - 5.0;
 
         commands
             .spawn((
                 PbrBundle {
-                    mesh: face_mesh.clone(),
-                    material: face_material.clone(),
+                    mesh: card_mesh.clone(),
+                    material: card_material.clone(),
                     transform: Transform::from_xyz(x, CARD_HALF_THICKNESS, HAND_Z),
                     ..default()
                 },
@@ -184,10 +231,36 @@ fn setup(
             ))
             .with_children(|parent| {
                 parent.spawn(PbrBundle {
-                    mesh: shell_mesh.clone(),
-                    material: shell_material.clone(),
+                    mesh: mesh.clone(),
+                    material: material.clone(),
                     ..default()
                 });
+
+                let attributes = card_type.attributes();
+
+                for i in 0..attributes.health {
+                    let x = i as f32 * ATTRIBUTE_WIDTH - ATTRIBUTE_X_OFFSET;
+
+                    parent.spawn(PbrBundle {
+                        mesh: heart_mesh.clone(),
+                        material: heart_material.clone(),
+                        transform: Transform::from_xyz(x, 0.0, ATTRIBUTE_HEART_OFFSET)
+                            .with_scale(ATTRIBUTE_SCALE),
+                        ..default()
+                    });
+                }
+
+                for i in 0..attributes.attack {
+                    let x = i as f32 * ATTRIBUTE_WIDTH - ATTRIBUTE_X_OFFSET;
+
+                    parent.spawn(PbrBundle {
+                        mesh: sword_mesh.clone(),
+                        material: black_material.clone(),
+                        transform: Transform::from_xyz(x, BOARD_HEIGHT, ATTRIBUTE_SWORD_OFFSET)
+                            .with_scale(ATTRIBUTE_SCALE),
+                        ..default()
+                    });
+                }
             });
     }
 
