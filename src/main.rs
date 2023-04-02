@@ -67,6 +67,13 @@ struct Attributes {
     health: u32,
 }
 
+enum CardAbility {
+    AttackUpAdjacent,
+    HealthUpAdjacent,
+    HealthUpAll,
+    StrengthInNumbers,
+}
+
 enum CardType {
     Heart,
     Pitchfork,
@@ -75,6 +82,15 @@ enum CardType {
 }
 
 impl CardType {
+    fn ability(&self) -> CardAbility {
+        match self {
+            Self::Heart => CardAbility::HealthUpAll,
+            Self::Pitchfork => CardAbility::StrengthInNumbers,
+            Self::Sword => CardAbility::AttackUpAdjacent,
+            Self::Tower => CardAbility::HealthUpAdjacent,
+        }
+    }
+
     fn attributes(&self) -> Attributes {
         match self {
             Self::Heart => Attributes {
