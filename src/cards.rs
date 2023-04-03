@@ -197,9 +197,7 @@ impl CardType {
     pub fn material(&self, assets: &CardAssets) -> Handle<StandardMaterial> {
         match self {
             Self::Heart => assets.heart_material.clone(),
-            Self::Pitchfork => assets.card_material.clone(),
-            Self::Sword => assets.card_material.clone(),
-            Self::Tower => assets.card_material.clone(),
+            _ => assets.black_material.clone(),
         }
     }
 

@@ -147,7 +147,7 @@ fn setup(
     commands.insert_resource(PlayerState::default());
     commands.spawn((
         Camera3dBundle {
-            transform: Transform::from_xyz(0.0, 15.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
+            transform: Transform::from_xyz(0.0, 9.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
             ..default()
         },
         PickingCameraBundle::default(),
