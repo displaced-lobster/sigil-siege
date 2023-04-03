@@ -22,7 +22,6 @@ use deck::*;
 use hand::*;
 use states::*;
 
-const BOARD_HEIGHT: f32 = 0.25;
 const HAND_Z: f32 = 6.0;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, SystemSet)]
@@ -48,11 +47,7 @@ fn main() {
         })
         .add_startup_system(setup)
         .add_system(setup_board.in_set(OnUpdate(GameState::Setup)))
-        .add_system(
-            card_played
-                .in_set(PlayCardSystemSet::CardPlayed)
-                .in_set(OnUpdate(GameState::PlayerTurn)),
-        )
+        .add_system(apply_ability.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_card_placeholder.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_hand.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -64,6 +59,14 @@ fn main() {
                 .in_set(OnUpdate(GameState::PlayerTurn))
                 .before(PlayCardSystemSet::CardPlayed),
         )
+        .add_system(receive_ability.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(
+            reset_hand
+                .in_set(PlayCardSystemSet::CardPlayed)
+                .in_set(OnUpdate(GameState::PlayerTurn)),
+        )
+        .add_system(update_sigils::<Attack, AttackSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(update_sigils::<Health, HealthSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
         .run();
 }
 
@@ -151,13 +154,27 @@ fn setup(
     ));
 }
 
-fn card_played(
+fn apply_ability(
+    board: Res<Board>,
     mut ev_played: EventReader<CardPlayedEvent>,
-    mut q_hand: Query<(&Hand, &mut Transform)>,
+    mut q_cards: Query<(&CardType, &mut Attack, &mut Health), Without<Hand>>,
 ) {
     for ev in ev_played.iter() {
-        for (_, mut transform) in q_hand.iter_mut().filter(|(hand, _)| hand.0 > ev.index) {
-            transform.translation.x -= CARD_WIDTH;
+        let (affects, effect) = if let Ok((card_type, _, _)) = q_cards.get_mut(ev.entity) {
+            (
+                Some(card_type.affects(ev.entity, &board)),
+                Some(card_type.effect()),
+            )
+        } else {
+            (None, None)
+        };
+
+        if let (Some(affects), Some(effect)) = (affects, effect) {
+            for entity in affects {
+                if let Ok((_, mut attack, mut health)) = q_cards.get_mut(entity) {
+                    effect.apply(&mut attack, &mut health);
+                }
+            }
         }
     }
 }
@@ -179,59 +196,27 @@ fn draw_cards(
 
             let mesh = card_type.mesh(&card_assets);
             let material = card_type.material(&card_assets);
-            let mut children = Vec::new();
-
-            children.push(
-                commands
-                    .spawn(PbrBundle {
-                        mesh: mesh.clone(),
-                        material: material.clone(),
-                        ..default()
-                    })
-                    .id(),
-            );
-
             let attributes = card_type.attributes();
-
-            for i in 0..attributes.health {
-                let x = i as f32 * ATTRIBUTE_WIDTH - ATTRIBUTE_X_OFFSET;
-
-                children.push(
-                    commands
-                        .spawn(PbrBundle {
-                            mesh: card_assets.heart_mesh.clone(),
-                            material: card_assets.heart_material.clone(),
-                            transform: Transform::from_xyz(x, 0.0, ATTRIBUTE_HEART_OFFSET)
-                                .with_scale(ATTRIBUTE_SCALE),
-                            ..default()
-                        })
-                        .id(),
-                );
-            }
-
-            for i in 0..attributes.attack {
-                let x = i as f32 * ATTRIBUTE_WIDTH - ATTRIBUTE_X_OFFSET;
-
-                children.push(
-                    commands
-                        .spawn(PbrBundle {
-                            mesh: card_assets.sword_mesh.clone(),
-                            material: card_assets.black_material.clone(),
-                            transform: Transform::from_xyz(x, BOARD_HEIGHT, ATTRIBUTE_SWORD_OFFSET)
-                                .with_scale(ATTRIBUTE_SCALE),
-                            ..default()
-                        })
-                        .id(),
-                );
-            }
+            let child = commands
+                .spawn(PbrBundle {
+                    mesh: mesh.clone(),
+                    material: material.clone(),
+                    ..default()
+                })
+                .id();
 
             commands
                 .entity(entity)
                 .remove::<Deck>()
                 .remove::<Draw>()
-                .insert(Hand(hand_size))
+                .insert((
+                    card_type,
+                    Hand(hand_size),
+                    Attack(attributes.attack as i32),
+                    Health(attributes.health as i32),
+                ))
                 .insert(PickableBundle::default())
-                .push_children(&children);
+                .push_children(&[child]);
 
             hand_size += 1;
         }
@@ -364,11 +349,45 @@ fn play_card(
                             entity: picked_entity,
                             index: hand.0,
                         });
-                        commands.entity(picked_entity).remove::<Picked>();
-                        commands.entity(picked_entity).remove::<Hand>();
+                        commands
+                            .entity(picked_entity)
+                            .remove::<Picked>()
+                            .remove::<Hand>()
+                            .insert(PendingAbility);
                     }
                 }
             }
+        }
+    }
+}
+
+fn receive_ability(
+    mut commands: Commands,
+    board: Res<Board>,
+    mut ev_played: EventReader<CardPlayedEvent>,
+    mut q_pending: Query<(&mut Attack, &mut Health), With<PendingAbility>>,
+    q_cards: Query<(Entity, &CardType), (Without<Hand>, Without<PendingAbility>)>,
+) {
+    for ev in ev_played.iter() {
+        if let Ok((mut attack, mut health)) = q_pending.get_mut(ev.entity) {
+            for (entity, card_type) in q_cards.iter() {
+                if card_type.affects(entity, &board).contains(&ev.entity) {
+                    card_type.effect().apply(&mut attack, &mut health);
+                }
+            }
+
+            commands.entity(ev.entity).remove::<PendingAbility>();
+        }
+    }
+}
+
+fn reset_hand(
+    mut ev_played: EventReader<CardPlayedEvent>,
+    mut q_hand: Query<(&Hand, &mut Transform)>,
+) {
+    for ev in ev_played.iter() {
+        for (_, mut transform) in q_hand.iter_mut().filter(|(hand, _)| hand.0 > ev.index) {
+            transform.translation.x -= CARD_WIDTH;
         }
     }
 }
@@ -432,4 +451,62 @@ fn setup_board(
 
     commands.insert_resource(Board::new());
     state.set(GameState::PlayerTurn);
+}
+
+fn update_sigils<A: Attribute + Component, S: Sigil + Component>(
+    mut commands: Commands,
+    card_assets: Res<CardAssets>,
+    q_card: Query<(Entity, &A), Changed<A>>,
+    q_sigil: Query<(Entity, &Parent, &S), Without<A>>,
+) {
+    for (entity, attribute) in q_card.iter() {
+        let mut sigils = q_sigil
+            .iter()
+            .filter(|(_, parent, _)| parent.get() == entity)
+            .map(|(entity, _, sigil)| (entity, sigil))
+            .collect::<Vec<_>>();
+
+        sigils.sort_by(|(_, sigil_a), (_, sigil_b)| {
+            sigil_a.index().partial_cmp(&sigil_b.index()).unwrap()
+        });
+
+        if sigils.len() as i32 == attribute.get() {
+            continue;
+        }
+
+        match sigils.len() as i32 > attribute.get() {
+            true => {
+                while !sigils.is_empty() && sigils.len() as i32 > attribute.get() {
+                    if let Some((entity, _)) = sigils.pop() {
+                        commands.entity(entity).despawn_recursive();
+                    }
+                }
+            }
+            false => {
+                let offset = if let Some((_, sigil)) = sigils.pop() {
+                    sigil.index() as f32 * ATTRIBUTE_WIDTH - ATTRIBUTE_X_OFFSET
+                } else {
+                    -ATTRIBUTE_X_OFFSET
+                };
+                let children = (0..attribute.get() - sigils.len() as i32)
+                    .into_iter()
+                    .map(|i| {
+                        let x = offset + i as f32 * ATTRIBUTE_WIDTH;
+
+                        commands
+                            .spawn((PbrBundle {
+                                mesh: S::mesh(&card_assets),
+                                material: S::material(&card_assets),
+                                transform: Transform::from_xyz(x, S::offset_y(), S::offset_z())
+                                    .with_scale(ATTRIBUTE_SCALE),
+                                ..default()
+                            },))
+                            .id()
+                    })
+                    .collect::<Vec<_>>();
+
+                commands.entity(entity).push_children(&children);
+            }
+        }
+    }
 }
