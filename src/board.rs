@@ -1,10 +1,13 @@
 use bevy::prelude::*;
 
+
+use crate::cards::CardType;
+
 pub const BOARD_HEIGHT: f32 = 0.25;
 
 #[derive(Resource)]
 pub struct Board {
-    player_board: [Option<Entity>; 4],
+    player_board: [Option<BoardPlacement>; 4],
 }
 
 impl Board {
@@ -14,8 +17,8 @@ impl Board {
         }
     }
 
-    pub fn adjacent(&self, entity: Entity) -> (Option<Entity>, Option<Entity>) {
-        let index = self.player_board.iter().position(|e| *e == Some(entity));
+    pub fn adjacent(&self, entity: Entity) -> (Option<BoardPlacement>, Option<BoardPlacement>) {
+        let index = self.player_board.iter().filter_map(|e| *e).position(|e| e.entity == entity);
 
         if let Some(index) = index {
             let left = if index == 0 {
@@ -36,15 +39,22 @@ impl Board {
         }
     }
 
-    pub fn others(&self, entity: Entity) -> impl Iterator<Item = Entity> + '_ {
+    pub fn others(&self, entity: Entity) -> impl Iterator<Item = BoardPlacement> + '_ {
         self.player_board
             .iter()
             .filter_map(|e| *e)
-            .filter(move |e| *e != entity)
+            .filter(move |e| e.entity != entity)
     }
 
-    pub fn place(&mut self, index: u32, entity: Entity) {
-        self.player_board[index as usize] = Some(entity);
+    pub fn others_of_type(&self, entity: Entity, card_type: CardType) -> impl Iterator<Item = BoardPlacement> + '_ {
+        self.player_board
+            .iter()
+            .filter_map(|e| *e)
+            .filter(move |e| e.entity != entity && e.card_type == card_type)
+    }
+
+    pub fn place(&mut self, index: u32, entity: Entity, card_type: CardType) {
+        self.player_board[index as usize] = Some(BoardPlacement { entity, card_type });
     }
 
     pub fn unoccupied(&self, index: u32) -> bool {
@@ -56,4 +66,10 @@ impl Board {
 pub struct BoardAssets {
     pub material: Handle<StandardMaterial>,
     pub mesh: Handle<Mesh>,
+}
+
+#[derive(Clone, Copy)]
+pub struct BoardPlacement {
+    pub entity: Entity,
+    pub card_type: CardType,
 }

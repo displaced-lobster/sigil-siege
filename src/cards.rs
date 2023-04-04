@@ -107,7 +107,7 @@ pub enum CardAbility {
 }
 
 impl CardAbility {
-    pub fn affects(&self, entity: Entity, board: &Board) -> Vec<Entity> {
+    pub fn affects(&self, entity: Entity, card_type: CardType, board: &Board) -> Vec<Entity> {
         let mut affects = Vec::new();
 
         match self {
@@ -115,30 +115,34 @@ impl CardAbility {
                 let (left, right) = board.adjacent(entity);
 
                 if let Some(left) = left {
-                    affects.push(left);
+                    affects.push(left.entity);
                 }
 
                 if let Some(right) = right {
-                    affects.push(right);
+                    affects.push(right.entity);
                 }
             }
             Self::HealthUpAdjacent => {
                 let (left, right) = board.adjacent(entity);
 
                 if let Some(left) = left {
-                    affects.push(left);
+                    affects.push(left.entity);
                 }
 
                 if let Some(right) = right {
-                    affects.push(right);
+                    affects.push(right.entity);
                 }
             }
             Self::HealthUpAll => {
                 for entity in board.others(entity) {
-                    affects.push(entity);
+                    affects.push(entity.entity);
                 }
             }
-            _ => {}
+            Self::StrengthInNumbers => {
+                for entity in board.others_of_type(entity, card_type) {
+                    affects.push(entity.entity);
+                }
+            }
         }
 
         affects
@@ -170,7 +174,7 @@ impl CardAbilityEffect {
     }
 }
 
-#[derive(Component)]
+#[derive(Clone, Copy, Component, PartialEq, Eq)]
 pub enum CardType {
     Heart,
     Pitchfork,
@@ -189,7 +193,7 @@ impl CardType {
     }
 
     pub fn affects(&self, entity: Entity, board: &Board) -> Vec<Entity> {
-        self.ability().affects(entity, board)
+        self.ability().affects(entity, *self, board)
     }
 
     pub fn attributes(&self) -> Attributes {

@@ -350,10 +350,10 @@ fn play_card(
     mut ev_pick: EventReader<PickingEvent>,
     mut ev_played: EventWriter<CardPlayedEvent>,
     mut q_placeholder: Query<(&CardPlaceholder, &Transform, &mut Handle<StandardMaterial>)>,
-    mut q_picked: Query<(Entity, &Hand, &mut Transform), (With<Picked>, Without<CardPlaceholder>)>,
+    mut q_picked: Query<(Entity, &Hand, &CardType, &mut Transform), (With<Picked>, Without<CardPlaceholder>)>,
 ) {
     for ev in ev_pick.iter() {
-        if let Ok((picked_entity, hand, mut transform)) = q_picked.get_single_mut() {
+        if let Ok((picked_entity, hand, card_type, mut transform)) = q_picked.get_single_mut() {
             if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
                 if let Ok((placeholder, placeholder_transform, mut material)) =
                     q_placeholder.get_mut(*e)
@@ -363,7 +363,7 @@ fn play_card(
                     if board.unoccupied(index) {
                         *material = placeholder_materials.invisable.clone();
                         transform.translation = placeholder_transform.translation;
-                        board.place(index, picked_entity);
+                        board.place(index, picked_entity, *card_type);
 
                         ev_played.send(CardPlayedEvent {
                             entity: picked_entity,
