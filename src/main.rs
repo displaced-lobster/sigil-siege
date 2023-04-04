@@ -167,8 +167,7 @@ fn setup(
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(0.0, 6.0, 0.0)
-            .looking_at(Vec3::ZERO, Vec3::Y),
+        transform: Transform::from_xyz(0.0, 6.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..default()
     });
 }
@@ -350,7 +349,10 @@ fn play_card(
     mut ev_pick: EventReader<PickingEvent>,
     mut ev_played: EventWriter<CardPlayedEvent>,
     mut q_placeholder: Query<(&CardPlaceholder, &Transform, &mut Handle<StandardMaterial>)>,
-    mut q_picked: Query<(Entity, &Hand, &CardType, &mut Transform), (With<Picked>, Without<CardPlaceholder>)>,
+    mut q_picked: Query<
+        (Entity, &Hand, &CardType, &mut Transform),
+        (With<Picked>, Without<CardPlaceholder>),
+    >,
 ) {
     for ev in ev_pick.iter() {
         if let Ok((picked_entity, hand, card_type, mut transform)) = q_picked.get_single_mut() {

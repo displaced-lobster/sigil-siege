@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 
-
 use crate::cards::CardType;
 
 pub const BOARD_HEIGHT: f32 = 0.25;
@@ -18,7 +17,11 @@ impl Board {
     }
 
     pub fn adjacent(&self, entity: Entity) -> (Option<BoardPlacement>, Option<BoardPlacement>) {
-        let index = self.player_board.iter().filter_map(|e| *e).position(|e| e.entity == entity);
+        let index = self
+            .player_board
+            .iter()
+            .filter_map(|e| *e)
+            .position(|e| e.entity == entity);
 
         if let Some(index) = index {
             let left = if index == 0 {
@@ -46,7 +49,11 @@ impl Board {
             .filter(move |e| e.entity != entity)
     }
 
-    pub fn others_of_type(&self, entity: Entity, card_type: CardType) -> impl Iterator<Item = BoardPlacement> + '_ {
+    pub fn others_of_type(
+        &self,
+        entity: Entity,
+        card_type: CardType,
+    ) -> impl Iterator<Item = BoardPlacement> + '_ {
         self.player_board
             .iter()
             .filter_map(|e| *e)
