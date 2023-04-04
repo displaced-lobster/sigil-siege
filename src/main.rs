@@ -41,10 +41,6 @@ fn main() {
             WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
         )
         .insert_resource(ClearColor(Color::rgb(0.06, 0.06, 0.08)))
-        .insert_resource(AmbientLight {
-            brightness: 1.0,
-            color: Color::rgb(0.63, 0.51, 0.51),
-        })
         .add_startup_system(setup)
         .add_system(setup_board.in_set(OnUpdate(GameState::Setup)))
         .add_system(apply_ability.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -66,6 +62,7 @@ fn main() {
                 .in_set(OnUpdate(GameState::PlayerTurn)),
         )
         .add_system(update_sigils::<Attack, AttackSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(update_sigils::<Cost, CostSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(update_sigils::<Health, HealthSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
         .run();
 }
@@ -80,9 +77,6 @@ fn setup(
         base_color: Color::WHITE,
         base_color_texture: Some(asset_server.load("textures/board-base-color.png")),
         perceptual_roughness: 1.0,
-        metallic_roughness_texture: Some(asset_server.load("textures/board-roughness.png")),
-        flip_normal_map_y: true,
-        normal_map_texture: Some(asset_server.load("textures/board-normal.png")),
         reflectance: 0.0,
         ..default()
     });
@@ -91,11 +85,13 @@ fn setup(
     let invisable_material = materials.add(StandardMaterial {
         base_color: Color::rgba(0.0, 0.0, 0.0, 0.0),
         alpha_mode: AlphaMode::Add,
+        unlit: true,
         ..default()
     });
     let hovered_material = materials.add(StandardMaterial {
-        base_color: Color::rgba(0.0, 0.82, 0.09, 0.65),
+        base_color: Color::rgba(0.0, 1.0, 0.9, 0.0499),
         alpha_mode: AlphaMode::Add,
+        unlit: true,
         ..default()
     });
 
@@ -118,6 +114,7 @@ fn setup(
     });
 
     let heart_mesh = asset_server.load("models/heart.glb#Mesh0/Primitive0");
+    let gem_mesh = asset_server.load("models/gem.glb#Mesh0/Primitive0");
     let pitchfork_mesh = asset_server.load("models/pitchfork.glb#Mesh0/Primitive0");
     let sword_mesh = asset_server.load("models/sword.glb#Mesh0/Primitive0");
     let tower_mesh = asset_server.load("models/tower.glb#Mesh0/Primitive0");
@@ -132,12 +129,20 @@ fn setup(
         perceptual_roughness: 1.0,
         ..default()
     });
+    let gem_material = materials.add(StandardMaterial {
+        base_color: Color::PURPLE,
+        metallic: 1.0,
+        perceptual_roughness: 0.0,
+        ..default()
+    });
 
     commands.insert_resource(CardAssets {
         card_mesh,
         card_material,
         heart_mesh,
         heart_material,
+        gem_mesh,
+        gem_material,
         pitchfork_mesh,
         sword_mesh,
         tower_mesh,
@@ -152,6 +157,20 @@ fn setup(
         },
         PickingCameraBundle::default(),
     ));
+
+    commands.spawn(PointLightBundle {
+        point_light: PointLight {
+            color: Color::WHITE,
+            intensity: 5000.0,
+            range: 80.0,
+            radius: 12.0,
+            shadows_enabled: true,
+            ..default()
+        },
+        transform: Transform::from_xyz(0.0, 6.0, 0.0)
+            .looking_at(Vec3::ZERO, Vec3::Y),
+        ..default()
+    });
 }
 
 fn apply_ability(
@@ -213,6 +232,7 @@ fn draw_cards(
                     card_type,
                     Hand(hand_size),
                     Attack(attributes.attack as i32),
+                    Cost(attributes.cost as i32),
                     Health(attributes.health as i32),
                 ))
                 .insert(PickableBundle::default())
@@ -484,21 +504,21 @@ fn update_sigils<A: Attribute + Component, S: Sigil + Component>(
             }
             false => {
                 let offset = if let Some((_, sigil)) = sigils.pop() {
-                    sigil.index() as f32 * ATTRIBUTE_WIDTH - ATTRIBUTE_X_OFFSET
+                    S::direction() * sigil.index() as f32 * S::width() - S::offset_x()
                 } else {
-                    -ATTRIBUTE_X_OFFSET
+                    -S::offset_x()
                 };
                 let children = (0..attribute.get() - sigils.len() as i32)
                     .into_iter()
                     .map(|i| {
-                        let x = offset + i as f32 * ATTRIBUTE_WIDTH;
+                        let x = offset + i as f32 * S::width() * S::direction();
 
                         commands
                             .spawn((PbrBundle {
                                 mesh: S::mesh(&card_assets),
                                 material: S::material(&card_assets),
                                 transform: Transform::from_xyz(x, S::offset_y(), S::offset_z())
-                                    .with_scale(ATTRIBUTE_SCALE),
+                                    .with_scale(S::scale()),
                                 ..default()
                             },))
                             .id()

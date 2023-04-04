@@ -1,13 +1,17 @@
 use bevy::prelude::*;
 
-use crate::board::{Board, BOARD_HEIGHT};
+use crate::board::Board;
 
-pub const ABILITY_MAX: i32 = 4;
-pub const ATTRIBUTE_HEART_OFFSET: f32 = 1.4;
-pub const ATTRIBUTE_SCALE: Vec3 = Vec3::new(0.5, 0.5, 0.5);
-pub const ATTRIBUTE_SWORD_OFFSET: f32 = 1.0;
-pub const ATTRIBUTE_WIDTH: f32 = 0.4;
-pub const ATTRIBUTE_X_OFFSET: f32 = 0.6;
+const ABILITY_MAX: i32 = 4;
+const ATTRIBUTE_HEART_OFFSET: f32 = 1.4;
+const ATTRIBUTE_GEM_OFFSET_X: f32 = -0.8;
+const ATTRIBUTE_GEM_OFFSET_Z: f32 = -1.2;
+const ATTRIBUTE_GEM_SCALE: Vec3 = Vec3::new(0.732, 0.732, 0.732);
+const ATTRIBUTE_GEM_WIDTH: f32 = 0.25;
+const ATTRIBUTE_SCALE: Vec3 = Vec3::new(0.5, 0.5, 0.5);
+const ATTRIBUTE_SWORD_OFFSET: f32 = 1.0;
+const ATTRIBUTE_WIDTH: f32 = 0.4;
+const ATTRIBUTE_X_OFFSET: f32 = 0.6;
 pub const CARD_THICKNESS: f32 = 0.05;
 pub const CARD_HALF_THICKNESS: f32 = CARD_THICKNESS / 2.0;
 pub const CARD_HEIGHT: f32 = 3.0;
@@ -34,6 +38,16 @@ impl Attribute for Attack {
     }
 }
 
+impl Attribute for Cost {
+    fn get(&self) -> i32 {
+        self.0
+    }
+
+    fn set(&mut self, value: i32) {
+        self.0 = value;
+    }
+}
+
 impl Attribute for Health {
     fn get(&self) -> i32 {
         self.0
@@ -43,6 +57,12 @@ impl Attribute for Health {
         self.0 = value;
     }
 }
+
+#[derive(Component)]
+pub struct Cost(pub i32);
+
+#[derive(Component)]
+pub struct CostSigil(pub u32);
 
 #[derive(Component)]
 pub struct Health(pub i32);
@@ -66,6 +86,8 @@ pub struct CardAssets {
     pub card_mesh: Handle<Mesh>,
     pub heart_material: Handle<StandardMaterial>,
     pub heart_mesh: Handle<Mesh>,
+    pub gem_material: Handle<StandardMaterial>,
+    pub gem_mesh: Handle<Mesh>,
     pub pitchfork_mesh: Handle<Mesh>,
     pub sword_mesh: Handle<Mesh>,
     pub tower_mesh: Handle<Mesh>,
@@ -73,6 +95,7 @@ pub struct CardAssets {
 
 pub struct Attributes {
     pub attack: u32,
+    pub cost: u32,
     pub health: u32,
 }
 
@@ -173,18 +196,22 @@ impl CardType {
         match self {
             Self::Heart => Attributes {
                 attack: 1,
+                cost: 2,
                 health: 1,
             },
             Self::Pitchfork => Attributes {
                 attack: 1,
+                cost: 1,
                 health: 1,
             },
             Self::Sword => Attributes {
                 attack: 2,
+                cost: 2,
                 health: 2,
             },
             Self::Tower => Attributes {
                 attack: 1,
+                cost: 2,
                 health: 3,
             },
         }
@@ -215,15 +242,27 @@ impl CardType {
 pub struct PendingAbility;
 
 pub trait Sigil {
+    fn direction() -> f32 {
+        1.0
+    }
     fn index(&self) -> u32;
     fn mesh(assets: &CardAssets) -> Handle<Mesh>;
     fn material(assets: &CardAssets) -> Handle<StandardMaterial> {
         assets.black_material.clone()
     }
+    fn offset_x() -> f32 {
+        ATTRIBUTE_X_OFFSET
+    }
     fn offset_y() -> f32 {
         0.0
     }
     fn offset_z() -> f32;
+    fn scale() -> Vec3 {
+        ATTRIBUTE_SCALE
+    }
+    fn width() -> f32 {
+        ATTRIBUTE_WIDTH
+    }
 }
 
 impl Sigil for AttackSigil {
@@ -236,11 +275,45 @@ impl Sigil for AttackSigil {
     }
 
     fn offset_y() -> f32 {
-        BOARD_HEIGHT
+        0.025
     }
 
     fn offset_z() -> f32 {
         ATTRIBUTE_SWORD_OFFSET
+    }
+}
+
+impl Sigil for CostSigil {
+    fn direction() -> f32 {
+        -1.0
+    }
+
+    fn index(&self) -> u32 {
+        self.0
+    }
+
+    fn mesh(assets: &CardAssets) -> Handle<Mesh> {
+        assets.gem_mesh.clone()
+    }
+
+    fn material(assets: &CardAssets) -> Handle<StandardMaterial> {
+        assets.gem_material.clone()
+    }
+
+    fn offset_x() -> f32 {
+        ATTRIBUTE_GEM_OFFSET_X
+    }
+
+    fn offset_z() -> f32 {
+        ATTRIBUTE_GEM_OFFSET_Z
+    }
+
+    fn scale() -> Vec3 {
+        ATTRIBUTE_GEM_SCALE
+    }
+
+    fn width() -> f32 {
+        ATTRIBUTE_GEM_WIDTH
     }
 }
 
