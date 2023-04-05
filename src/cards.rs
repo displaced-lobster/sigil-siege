@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::board::Board;
+use crate::board::BoardState;
 
 const ABILITY_MAX: i32 = 4;
 const ATTRIBUTE_HEART_OFFSET: f32 = 1.4;
@@ -108,7 +108,7 @@ pub enum CardAbility {
 }
 
 impl CardAbility {
-    pub fn affects(&self, entity: Entity, card_type: CardType, board: &Board) -> Vec<Entity> {
+    pub fn affects(&self, entity: Entity, card_type: CardType, board: &BoardState) -> Vec<Entity> {
         let mut affects = Vec::new();
 
         match self {
@@ -175,7 +175,7 @@ impl CardAbilityEffect {
     }
 }
 
-#[derive(Clone, Copy, Component, PartialEq, Eq)]
+#[derive(Clone, Copy, Component, Debug, PartialEq, Eq)]
 pub enum CardType {
     Heart,
     Pitchfork,
@@ -193,7 +193,7 @@ impl CardType {
         }
     }
 
-    pub fn affects(&self, entity: Entity, board: &Board) -> Vec<Entity> {
+    pub fn affects(&self, entity: Entity, board: &BoardState) -> Vec<Entity> {
         self.ability().affects(entity, *self, board)
     }
 

@@ -14,12 +14,14 @@ mod board;
 mod cards;
 mod deck;
 mod hand;
+mod players;
 mod states;
 
 use board::*;
 use cards::*;
 use deck::*;
 use hand::*;
+use players::*;
 use states::*;
 
 const HAND_Z: f32 = 6.0;
@@ -28,6 +30,13 @@ const HAND_Z: f32 = 6.0;
 enum PlayCardSystemSet {
     PlayCard,
     CardPlayed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, SystemSet)]
+enum OpponentTurnSet {
+    DrawCards,
+    PlayCards,
+    ApplyAbility,
 }
 
 fn main() {
@@ -43,10 +52,24 @@ fn main() {
         .insert_resource(ClearColor(Color::rgb(0.06, 0.06, 0.08)))
         .add_startup_system(setup)
         .add_system(setup_board.in_set(OnUpdate(GameState::Setup)))
-        .add_system(apply_ability.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(
+            apply_ability::<Opponent, OpponentBoard>
+                .in_set(OpponentTurnSet::ApplyAbility)
+                .in_set(OnUpdate(GameState::OpponentTurn)),
+        )
+        .add_system(apply_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(
+            draw_opponent_cards
+                .in_set(OpponentTurnSet::DrawCards)
+                .in_schedule(OnEnter(GameState::OpponentTurn)),
+        )
         .add_system(end_turn.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(end_turn_opponent.in_set(OnUpdate(GameState::OpponentTurn)))
+        .add_system(
+            end_turn_opponent
+                .in_set(OnUpdate(GameState::OpponentTurn))
+                .after(OpponentTurnSet::ApplyAbility),
+        )
         .add_system(hover_card_placeholder.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_dial.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_hand.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -58,14 +81,31 @@ fn main() {
                 .in_set(OnUpdate(GameState::PlayerTurn))
                 .before(PlayCardSystemSet::CardPlayed),
         )
-        .add_system(receive_ability.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(reset_dial.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(
-            reset_hand
+            play_opponent_cards
+                .in_set(OpponentTurnSet::PlayCards)
+                .in_schedule(OnEnter(GameState::OpponentTurn))
+                .after(OpponentTurnSet::DrawCards),
+        )
+        .add_system(
+            receive_ability::<Opponent, OpponentBoard>
+                .in_set(OpponentTurnSet::ApplyAbility)
+                .in_set(OnUpdate(GameState::OpponentTurn)),
+        )
+        .add_system(receive_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(reset_dial.in_schedule(OnEnter(GameState::PlayerTurn)))
+        .add_system(reset_hand.in_schedule(OnEnter(GameState::PlayerTurn)))
+        .add_system(
+            reset_power::<Opponent, OpponentState>
+                .in_set(OpponentTurnSet::DrawCards)
+                .in_schedule(OnEnter(GameState::OpponentTurn)),
+        )
+        .add_system(reset_power::<Player, PlayerState>.in_schedule(OnEnter(GameState::PlayerTurn)))
+        .add_system(
+            slide_hand
                 .in_set(PlayCardSystemSet::CardPlayed)
                 .in_set(OnUpdate(GameState::PlayerTurn)),
         )
-        .add_system(reset_power.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(spend_power.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(update_sigils::<Attack, AttackSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(update_sigils::<Cost, CostSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -180,7 +220,7 @@ fn setup(
         tower_mesh,
         black_material,
     });
-
+    commands.insert_resource(OpponentState::default());
     commands.insert_resource(PlayerState::default());
     commands.spawn((
         Camera3dBundle {
@@ -204,15 +244,15 @@ fn setup(
     });
 }
 
-fn apply_ability(
-    board: Res<Board>,
+fn apply_ability<C: Component, B: Board>(
+    board: Res<B>,
     mut ev_played: EventReader<CardPlayedEvent>,
-    mut q_cards: Query<(&CardType, &mut Attack, &mut Health), Without<Hand>>,
+    mut q_cards: Query<(&CardType, &mut Attack, &mut Health), (With<C>, Without<Hand>)>,
 ) {
     for ev in ev_played.iter() {
         let (affects, effect) = if let Ok((card_type, _, _)) = q_cards.get_mut(ev.entity) {
             (
-                Some(card_type.affects(ev.entity, &board)),
+                Some(card_type.affects(ev.entity, board.state())),
                 Some(card_type.effect()),
             )
         } else {
@@ -274,9 +314,14 @@ fn draw_cards(
     }
 }
 
+fn draw_opponent_cards(mut opponent_state: ResMut<OpponentState>) {
+    opponent_state.draw_cards();
+    opponent_state.turn += 1;
+}
+
 fn hover_card_placeholder(
     materials: Res<CardPlaceholderMaterials>,
-    board: Res<Board>,
+    board: Res<PlayerBoard>,
     mut ev_pick: EventReader<PickingEvent>,
     mut q_placeholder: Query<(&CardPlaceholder, &mut Handle<StandardMaterial>)>,
     q_picked: Query<With<Picked>>,
@@ -365,9 +410,7 @@ fn end_turn(
     }
 }
 
-fn end_turn_opponent(
-    mut state: ResMut<NextState<GameState>>,
-) {
+fn end_turn_opponent(mut state: ResMut<NextState<GameState>>) {
     state.set(GameState::PlayerTurn);
 }
 
@@ -424,7 +467,7 @@ fn pick_from_hand(
 fn play_card(
     mut commands: Commands,
     placeholder_materials: Res<CardPlaceholderMaterials>,
-    mut board: ResMut<Board>,
+    mut board: ResMut<PlayerBoard>,
     mut ev_pick: EventReader<PickingEvent>,
     mut ev_played: EventWriter<CardPlayedEvent>,
     mut q_placeholder: Query<(&CardPlaceholder, &Transform, &mut Handle<StandardMaterial>)>,
@@ -462,17 +505,64 @@ fn play_card(
     }
 }
 
-fn receive_ability(
+fn play_opponent_cards(
     mut commands: Commands,
-    board: Res<Board>,
+    card_assets: Res<CardAssets>,
+    mut board: ResMut<OpponentBoard>,
+    mut opponent_state: ResMut<OpponentState>,
+    mut ev_played: EventWriter<CardPlayedEvent>,
+    q_placeholder: Query<(&CardPlaceholder, &Transform), With<Opponent>>,
+) {
+    while board.has_empty_place() && opponent_state.can_play_card() {
+        let card = opponent_state.play_card().unwrap();
+        let index = board.random_empty_place().unwrap();
+        let (_, transform) = q_placeholder.iter().find(|(p, _)| p.0 == index).unwrap();
+        let attributes = card.attributes();
+        let mesh = card.mesh(&card_assets);
+        let material = card.material(&card_assets);
+        let entity = commands
+            .spawn((
+                PbrBundle {
+                    mesh: card_assets.card_mesh.clone(),
+                    material: card_assets.card_material.clone(),
+                    transform: *transform,
+                    ..default()
+                },
+                card,
+                Attack(attributes.attack as i32),
+                Health(attributes.health as i32),
+                Opponent,
+                PendingAbility,
+            ))
+            .with_children(|parent| {
+                parent.spawn(PbrBundle {
+                    mesh: mesh.clone(),
+                    material: material.clone(),
+                    ..default()
+                });
+            })
+            .id();
+
+        board.place(index, entity, card);
+        ev_played.send(CardPlayedEvent { entity, index });
+        opponent_state.available_power -= attributes.cost as i32;
+    }
+}
+
+fn receive_ability<C: Component, B: Board>(
+    mut commands: Commands,
+    board: Res<B>,
     mut ev_played: EventReader<CardPlayedEvent>,
     mut q_pending: Query<(&mut Attack, &mut Health), With<PendingAbility>>,
-    q_cards: Query<(Entity, &CardType), (Without<Hand>, Without<PendingAbility>)>,
+    q_cards: Query<(Entity, &CardType), (With<C>, Without<Hand>, Without<PendingAbility>)>,
 ) {
     for ev in ev_played.iter() {
         if let Ok((mut attack, mut health)) = q_pending.get_mut(ev.entity) {
             for (entity, card_type) in q_cards.iter() {
-                if card_type.affects(entity, &board).contains(&ev.entity) {
+                if card_type
+                    .affects(entity, board.state())
+                    .contains(&ev.entity)
+                {
                     card_type.effect().apply(&mut attack, &mut health);
                 }
             }
@@ -488,22 +578,21 @@ fn reset_dial(mut q_dial: Query<&mut Transform, With<TurnDial>>) {
     }
 }
 
-fn reset_hand(
-    mut ev_played: EventReader<CardPlayedEvent>,
-    mut q_hand: Query<(&Hand, &mut Transform)>,
-) {
-    for ev in ev_played.iter() {
-        for (_, mut transform) in q_hand.iter_mut().filter(|(hand, _)| hand.0 > ev.index) {
-            transform.translation.x -= CARD_WIDTH;
-        }
+fn reset_hand(mut q_hand: Query<&mut Hand>) {
+    let mut hand = q_hand.iter_mut().collect::<Vec<_>>();
+
+    hand.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (i, hand) in hand.iter_mut().enumerate() {
+        hand.0 = i as u32;
     }
 }
 
-fn reset_power(
+fn reset_power<C: Component + Default, P: PlayableState>(
     mut commands: Commands,
     card_assets: Res<CardAssets>,
-    mut player_state: ResMut<PlayerState>,
-    mut q_power: Query<(&mut Power, &mut Handle<StandardMaterial>)>,
+    mut player_state: ResMut<P>,
+    mut q_power: Query<(&mut Power, &mut Handle<StandardMaterial>), With<C>>,
 ) {
     const POWER_OFFSET_X: f32 = 6.4;
     const POWER_OFFSET_Z: f32 = 3.5;
@@ -514,29 +603,36 @@ fn reset_power(
         *material = card_assets.gem_material.clone();
     }
 
-    player_state.power = player_state.max_power.min(player_state.power + 1);
-    player_state.available_power = player_state.power as i32;
+    let power = player_state
+        .get_max_power()
+        .min(player_state.get_power() + 1) as i32;
 
-    let displayed_power = q_power.iter().count() as i32;
-    let delta = player_state.power as i32 - displayed_power;
+    player_state.set_power(power);
+    player_state.set_available_power(power);
 
-    if delta > 0 {
-        let index = displayed_power;
-        let offset_z = -index as f32 * POWER_HEIGHT + POWER_OFFSET_Z;
+    if P::show_power() {
+        let displayed_power = q_power.iter().count() as i32;
+        let delta = player_state.get_power() as i32 - displayed_power;
 
-        for i in 0..delta {
-            let z = -i as f32 * POWER_HEIGHT + offset_z;
+        if delta > 0 {
+            let index = displayed_power;
+            let offset_z = -index as f32 * POWER_HEIGHT + POWER_OFFSET_Z;
 
-            commands.spawn((
-                PbrBundle {
-                    mesh: card_assets.gem_mesh.clone(),
-                    material: card_assets.gem_material.clone(),
-                    transform: Transform::from_xyz(POWER_OFFSET_X, 0.0, z)
-                        .with_scale(Vec3::splat(1.8)),
-                    ..default()
-                },
-                Power::new((index + i) as u32),
-            ));
+            for i in 0..delta {
+                let z = -i as f32 * POWER_HEIGHT + offset_z;
+
+                commands.spawn((
+                    PbrBundle {
+                        mesh: card_assets.gem_mesh.clone(),
+                        material: card_assets.gem_material.clone(),
+                        transform: Transform::from_xyz(POWER_OFFSET_X, 0.0, z)
+                            .with_scale(Vec3::splat(1.8)),
+                        ..default()
+                    },
+                    Power::new((index + i) as u32),
+                    C::default(),
+                ));
+            }
         }
     }
 }
@@ -585,8 +681,8 @@ fn setup_board(
             let z = z_start - z as f32 * (CARD_HEIGHT + card_padding);
             let x = x as f32 * (CARD_WIDTH + card_padding) - 4.5;
 
-            let entity = commands
-                .spawn((
+            if z == z_start {
+                commands.spawn((
                     PbrBundle {
                         mesh: card_assets.card_mesh.clone(),
                         material: placeholder_materials.invisable.clone(),
@@ -594,11 +690,18 @@ fn setup_board(
                         ..default()
                     },
                     CardPlaceholder(index),
-                ))
-                .id();
-
-            if z == z_start {
-                commands.entity(entity).insert(PickableBundle::default());
+                    Player,
+                    PickableBundle::default(),
+                ));
+            } else {
+                commands.spawn((
+                    TransformBundle {
+                        local: Transform::from_xyz(x, y, z),
+                        ..default()
+                    },
+                    CardPlaceholder(index),
+                    Opponent,
+                ));
             }
         }
     }
@@ -615,11 +718,29 @@ fn setup_board(
                 ..default()
             },
             Deck(i),
+            Player,
         ));
     }
 
-    commands.insert_resource(Board::new());
+    commands.insert_resource(OpponentBoard::new());
+    commands.insert_resource(PlayerBoard::new());
     state.set(GameState::PlayerTurn);
+}
+
+fn slide_hand(
+    mut ev_played: EventReader<CardPlayedEvent>,
+    mut q_hand: Query<(&Hand, &mut Transform)>,
+    q_card: Query<With<Player>>,
+) {
+    for ev in ev_played.iter() {
+        if q_card.get(ev.entity).is_err() {
+            continue;
+        }
+
+        for (_, mut transform) in q_hand.iter_mut().filter(|(hand, _)| hand.0 > ev.index) {
+            transform.translation.x -= CARD_WIDTH;
+        }
+    }
 }
 
 fn spend_power(
@@ -639,7 +760,10 @@ fn spend_power(
     }
 
     if power_spent > 0 {
-        let mut power_vec = q_power.iter_mut().filter(|(power, _)| power.available).collect::<Vec<_>>();
+        let mut power_vec = q_power
+            .iter_mut()
+            .filter(|(power, _)| power.available)
+            .collect::<Vec<_>>();
 
         power_vec.sort_by(|a, b| a.0.index.partial_cmp(&b.0.index).unwrap());
 
