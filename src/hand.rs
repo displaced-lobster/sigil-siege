@@ -12,4 +12,16 @@ pub struct Hand(pub u32);
 pub struct Picked;
 
 #[derive(Component)]
-pub struct Power(pub u32);
+pub struct Power {
+    pub index: u32,
+    pub available: bool,
+}
+
+impl Power {
+    pub fn new(index: u32) -> Self {
+        Self {
+            index,
+            available: true,
+        }
+    }
+}

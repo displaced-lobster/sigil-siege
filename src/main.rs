@@ -46,6 +46,7 @@ fn main() {
         .add_system(apply_ability.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(end_turn.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(end_turn_opponent.in_set(OnUpdate(GameState::OpponentTurn)))
         .add_system(hover_card_placeholder.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_dial.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_hand.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -58,6 +59,7 @@ fn main() {
                 .before(PlayCardSystemSet::CardPlayed),
         )
         .add_system(receive_ability.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(reset_dial.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(
             reset_hand
                 .in_set(PlayCardSystemSet::CardPlayed)
@@ -363,9 +365,15 @@ fn end_turn(
     }
 }
 
+fn end_turn_opponent(
+    mut state: ResMut<NextState<GameState>>,
+) {
+    state.set(GameState::PlayerTurn);
+}
+
 fn mark_cards_to_draw(
     mut commands: Commands,
-    player_state: Res<PlayerState>,
+    mut player_state: ResMut<PlayerState>,
     q_deck: Query<(Entity, &Deck), Without<Hand>>,
     q_hand: Query<With<Hand>>,
 ) {
@@ -376,6 +384,7 @@ fn mark_cards_to_draw(
     }
 
     let draw_count = player_state.draw_count();
+    player_state.turn += 1;
     let mut sorted_deck = q_deck.iter().collect::<Vec<_>>();
 
     sorted_deck.sort_by(|(_, deck_a), (_, deck_b)| deck_a.0.partial_cmp(&deck_b.0).unwrap());
@@ -473,6 +482,12 @@ fn receive_ability(
     }
 }
 
+fn reset_dial(mut q_dial: Query<&mut Transform, With<TurnDial>>) {
+    for mut transform in q_dial.iter_mut() {
+        *transform = transform.with_rotation(Quat::from_rotation_y(0.0));
+    }
+}
+
 fn reset_hand(
     mut ev_played: EventReader<CardPlayedEvent>,
     mut q_hand: Query<(&Hand, &mut Transform)>,
@@ -488,32 +503,29 @@ fn reset_power(
     mut commands: Commands,
     card_assets: Res<CardAssets>,
     mut player_state: ResMut<PlayerState>,
-    q_power: Query<&Power>,
+    mut q_power: Query<(&mut Power, &mut Handle<StandardMaterial>)>,
 ) {
     const POWER_OFFSET_X: f32 = 6.4;
     const POWER_OFFSET_Z: f32 = 3.5;
     const POWER_HEIGHT: f32 = 1.0;
 
+    for (mut power, mut material) in q_power.iter_mut() {
+        power.available = true;
+        *material = card_assets.gem_material.clone();
+    }
+
     player_state.power = player_state.max_power.min(player_state.power + 1);
     player_state.available_power = player_state.power as i32;
 
-    let mut power_vec = q_power.iter().collect::<Vec<_>>();
-
-    power_vec.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-
-    let displayed_power = power_vec.len() as i32;
+    let displayed_power = q_power.iter().count() as i32;
     let delta = player_state.power as i32 - displayed_power;
 
     if delta > 0 {
-        let index = if let Some(power) = power_vec.pop() {
-            power.0
-        } else {
-            0
-        };
-        let offset_z = index as f32 * POWER_HEIGHT + POWER_OFFSET_Z;
+        let index = displayed_power;
+        let offset_z = -index as f32 * POWER_HEIGHT + POWER_OFFSET_Z;
 
         for i in 0..delta {
-            let z = i as f32 * POWER_HEIGHT + offset_z;
+            let z = -i as f32 * POWER_HEIGHT + offset_z;
 
             commands.spawn((
                 PbrBundle {
@@ -523,7 +535,7 @@ fn reset_power(
                         .with_scale(Vec3::splat(1.8)),
                     ..default()
                 },
-                Power(index + i as u32),
+                Power::new((index + i) as u32),
             ));
         }
     }
@@ -615,7 +627,7 @@ fn spend_power(
     mut ev_played: EventReader<CardPlayedEvent>,
     mut player_state: ResMut<PlayerState>,
     q_cost: Query<&Cost>,
-    mut q_power: Query<(&Power, &mut Handle<StandardMaterial>)>,
+    mut q_power: Query<(&mut Power, &mut Handle<StandardMaterial>)>,
 ) {
     let mut power_spent = 0;
 
@@ -627,12 +639,13 @@ fn spend_power(
     }
 
     if power_spent > 0 {
-        let mut power_vec = q_power.iter_mut().collect::<Vec<_>>();
+        let mut power_vec = q_power.iter_mut().filter(|(power, _)| power.available).collect::<Vec<_>>();
 
-        power_vec.sort_by(|a, b| a.0 .0.partial_cmp(&b.0 .0).unwrap());
+        power_vec.sort_by(|a, b| a.0.index.partial_cmp(&b.0.index).unwrap());
 
         for _ in 0..power_spent {
-            if let Some((_, mut material)) = power_vec.pop() {
+            if let Some((mut power, mut material)) = power_vec.pop() {
+                power.available = false;
                 *material = card_assets.gem_empty_material.clone();
             }
         }
