@@ -74,6 +74,18 @@ fn setup(
     asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let arrow_mesh = asset_server.load("models/arrow.glb#Mesh0/Primitive0");
+    let arrow_material = materials.add(StandardMaterial {
+        base_color: Color::rgb(0.45, 0.11, 0.15),
+        ..default()
+    });
+    let dial_mesh = asset_server.load("models/dial.glb#Mesh0/Primitive0");
+    let dial_material = materials.add(StandardMaterial {
+        base_color: Color::rgb(0.12, 0.12, 0.12),
+        metallic: 1.0,
+        perceptual_roughness: 0.2,
+        ..default()
+    });
     let mesh = asset_server.load("models/board.glb#Mesh0/Primitive0");
     let material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
@@ -82,7 +94,14 @@ fn setup(
         reflectance: 0.0,
         ..default()
     });
-    commands.insert_resource(BoardAssets { material, mesh });
+    commands.insert_resource(BoardAssets {
+        arrow_material,
+        arrow_mesh,
+        dial_material,
+        dial_mesh,
+        material,
+        mesh,
+    });
 
     let invisable_material = materials.add(StandardMaterial {
         base_color: Color::rgba(0.0, 0.0, 0.0, 0.0),
@@ -176,7 +195,7 @@ fn setup(
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(0.0, 6.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
+        transform: Transform::from_xyz(0.0, 9.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..default()
     });
 }
@@ -479,11 +498,30 @@ fn setup_board(
     player_state: Res<PlayerState>,
     mut state: ResMut<NextState<GameState>>,
 ) {
+    const DIAL_OFFSET: f32 = -7.5;
+
     commands.spawn(PbrBundle {
         mesh: board_assets.mesh.clone(),
         material: board_assets.material.clone(),
         ..default()
     });
+    commands
+        .spawn(PbrBundle {
+            mesh: board_assets.dial_mesh.clone(),
+            material: board_assets.dial_material.clone(),
+            transform: Transform::from_xyz(DIAL_OFFSET, 0.0, 0.0),
+            ..default()
+        })
+        .with_children(|parent| {
+            parent.spawn((
+                PbrBundle {
+                    mesh: board_assets.arrow_mesh.clone(),
+                    material: board_assets.arrow_material.clone(),
+                    ..default()
+                },
+                TurnDial,
+            ));
+        });
 
     let card_padding = 1.0;
     let y = BOARD_HEIGHT + CARD_HALF_THICKNESS;

@@ -71,6 +71,10 @@ impl Board {
 
 #[derive(Resource)]
 pub struct BoardAssets {
+    pub arrow_material: Handle<StandardMaterial>,
+    pub arrow_mesh: Handle<Mesh>,
+    pub dial_material: Handle<StandardMaterial>,
+    pub dial_mesh: Handle<Mesh>,
     pub material: Handle<StandardMaterial>,
     pub mesh: Handle<Mesh>,
 }
@@ -80,3 +84,6 @@ pub struct BoardPlacement {
     pub entity: Entity,
     pub card_type: CardType,
 }
+
+#[derive(Component)]
+pub struct TurnDial;
