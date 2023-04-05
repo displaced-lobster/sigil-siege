@@ -45,7 +45,9 @@ fn main() {
         .add_system(setup_board.in_set(OnUpdate(GameState::Setup)))
         .add_system(apply_ability.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(end_turn.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_card_placeholder.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(hover_dial.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_hand.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(mark_cards_to_draw.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(pick_from_hand.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -300,6 +302,28 @@ fn hover_card_placeholder(
     }
 }
 
+fn hover_dial(
+    mut ev_pick: EventReader<PickingEvent>,
+    mut q_dial: Query<&mut Transform, With<TurnDial>>,
+) {
+    for ev in ev_pick.iter() {
+        match ev {
+            PickingEvent::Hover(HoverEvent::JustEntered(e)) => {
+                if let Ok(mut transform) = q_dial.get_mut(*e) {
+                    *transform =
+                        transform.with_rotation(Quat::from_rotation_y(90.0_f32.to_radians()));
+                }
+            }
+            PickingEvent::Hover(HoverEvent::JustLeft(e)) => {
+                if let Ok(mut transform) = q_dial.get_mut(*e) {
+                    *transform = transform.with_rotation(Quat::from_rotation_y(0.0));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn hover_hand(
     player_state: Res<PlayerState>,
     mut ev_pick: EventReader<PickingEvent>,
@@ -320,6 +344,21 @@ fn hover_hand(
                 }
             }
             _ => {}
+        }
+    }
+}
+
+fn end_turn(
+    mut ev_pick: EventReader<PickingEvent>,
+    mut state: ResMut<NextState<GameState>>,
+    mut q_dial: Query<&mut Transform, With<TurnDial>>,
+) {
+    for ev in ev_pick.iter() {
+        if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
+            if let Ok(mut transform) = q_dial.get_mut(*e) {
+                *transform = transform.with_rotation(Quat::from_rotation_y(180.0_f32.to_radians()));
+                state.set(GameState::OpponentTurn);
+            }
         }
     }
 }
@@ -506,21 +545,22 @@ fn setup_board(
         ..default()
     });
     commands
-        .spawn(PbrBundle {
-            mesh: board_assets.dial_mesh.clone(),
-            material: board_assets.dial_material.clone(),
-            transform: Transform::from_xyz(DIAL_OFFSET, 0.0, 0.0),
-            ..default()
-        })
+        .spawn((
+            PbrBundle {
+                mesh: board_assets.dial_mesh.clone(),
+                material: board_assets.dial_material.clone(),
+                transform: Transform::from_xyz(DIAL_OFFSET, 0.0, 0.0),
+                ..default()
+            },
+            TurnDial,
+            PickableBundle::default(),
+        ))
         .with_children(|parent| {
-            parent.spawn((
-                PbrBundle {
-                    mesh: board_assets.arrow_mesh.clone(),
-                    material: board_assets.arrow_material.clone(),
-                    ..default()
-                },
-                TurnDial,
-            ));
+            parent.spawn((PbrBundle {
+                mesh: board_assets.arrow_mesh.clone(),
+                material: board_assets.arrow_material.clone(),
+                ..default()
+            },));
         });
 
     let card_padding = 1.0;
