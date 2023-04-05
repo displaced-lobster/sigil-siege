@@ -86,6 +86,7 @@ pub struct CardAssets {
     pub card_mesh: Handle<Mesh>,
     pub heart_material: Handle<StandardMaterial>,
     pub heart_mesh: Handle<Mesh>,
+    pub gem_empty_material: Handle<StandardMaterial>,
     pub gem_material: Handle<StandardMaterial>,
     pub gem_mesh: Handle<Mesh>,
     pub pitchfork_mesh: Handle<Mesh>,

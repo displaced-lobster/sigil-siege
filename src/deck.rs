@@ -15,8 +15,11 @@ struct DeckState {
 
 #[derive(Resource)]
 pub struct PlayerState {
+    pub available_power: i32,
     deck_state: DeckState,
     pub max_hand_size: u32,
+    pub max_power: u32,
+    pub power: u32,
     pub turn: u32,
 }
 
@@ -68,8 +71,11 @@ impl Default for PlayerState {
         }
 
         Self {
+            available_power: 0,
             deck_state: DeckState { cards },
             max_hand_size: 5,
+            max_power: 5,
+            power: 0,
             turn: 0,
         }
     }

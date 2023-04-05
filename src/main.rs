@@ -61,6 +61,8 @@ fn main() {
                 .in_set(PlayCardSystemSet::CardPlayed)
                 .in_set(OnUpdate(GameState::PlayerTurn)),
         )
+        .add_system(reset_power.in_schedule(OnEnter(GameState::PlayerTurn)))
+        .add_system(spend_power.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(update_sigils::<Attack, AttackSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(update_sigils::<Cost, CostSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(update_sigils::<Health, HealthSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -135,12 +137,19 @@ fn setup(
         perceptual_roughness: 0.0,
         ..default()
     });
+    let gem_empty_material = materials.add(StandardMaterial {
+        base_color: Color::GRAY,
+        metallic: 1.0,
+        perceptual_roughness: 0.0,
+        ..default()
+    });
 
     commands.insert_resource(CardAssets {
         card_mesh,
         card_material,
         heart_mesh,
         heart_material,
+        gem_empty_material,
         gem_mesh,
         gem_material,
         pitchfork_mesh,
@@ -273,18 +282,21 @@ fn hover_card_placeholder(
 }
 
 fn hover_hand(
+    player_state: Res<PlayerState>,
     mut ev_pick: EventReader<PickingEvent>,
-    mut q_hand: Query<&mut Transform, (With<Hand>, Without<Picked>)>,
+    mut q_hand: Query<(&Cost, &mut Transform), (With<Hand>, Without<Picked>)>,
 ) {
     for ev in ev_pick.iter() {
         match ev {
             PickingEvent::Hover(HoverEvent::JustEntered(e)) => {
-                if let Ok(mut transform) = q_hand.get_mut(*e) {
-                    transform.translation.y += 0.5;
+                if let Ok((cost, mut transform)) = q_hand.get_mut(*e) {
+                    if cost.0 <= player_state.available_power {
+                        transform.translation.y += 0.5;
+                    }
                 }
             }
             PickingEvent::Hover(HoverEvent::JustLeft(e)) => {
-                if let Ok(mut transform) = q_hand.get_mut(*e) {
+                if let Ok((_, mut transform)) = q_hand.get_mut(*e) {
                     transform.translation.y = CARD_HALF_THICKNESS;
                 }
             }
@@ -319,25 +331,25 @@ fn mark_cards_to_draw(
 
 fn pick_from_hand(
     mut commands: Commands,
+    player_state: Res<PlayerState>,
     mut ev_pick: EventReader<PickingEvent>,
-    mut q_hand: Query<&mut Transform, With<Hand>>,
+    mut q_hand: Query<(&Cost, &mut Transform), (With<Hand>, Without<Picked>)>,
+    mut q_picked: Query<(Entity, &mut Transform), With<Picked>>,
 ) {
     for ev in ev_pick.iter() {
-        match ev {
-            PickingEvent::Selection(SelectionEvent::JustSelected(e)) => {
-                if let Ok(mut transform) = q_hand.get_mut(*e) {
+        if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
+            if let Ok((cost, mut transform)) = q_hand.get_mut(*e) {
+                if cost.0 <= player_state.available_power {
+                    for (entity, mut picked_transform) in q_picked.iter_mut() {
+                        picked_transform.translation.z += 1.0;
+                        picked_transform.translation.y = CARD_HALF_THICKNESS;
+                        commands.entity(entity).remove::<Picked>();
+                    }
+
                     transform.translation.z -= 1.0;
                     commands.entity(*e).insert(Picked);
                 }
             }
-            PickingEvent::Selection(SelectionEvent::JustDeselected(e)) => {
-                if let Ok(mut transform) = q_hand.get_mut(*e) {
-                    transform.translation.y = CARD_HALF_THICKNESS;
-                    transform.translation.z = HAND_Z;
-                    commands.entity(*e).remove::<Picked>();
-                }
-            }
-            _ => {}
         }
     }
 }
@@ -414,6 +426,51 @@ fn reset_hand(
     }
 }
 
+fn reset_power(
+    mut commands: Commands,
+    card_assets: Res<CardAssets>,
+    mut player_state: ResMut<PlayerState>,
+    q_power: Query<&Power>,
+) {
+    const POWER_OFFSET_X: f32 = 6.4;
+    const POWER_OFFSET_Z: f32 = 3.5;
+    const POWER_HEIGHT: f32 = 1.0;
+
+    player_state.power = player_state.max_power.min(player_state.power + 1);
+    player_state.available_power = player_state.power as i32;
+
+    let mut power_vec = q_power.iter().collect::<Vec<_>>();
+
+    power_vec.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+    let displayed_power = power_vec.len() as i32;
+    let delta = player_state.power as i32 - displayed_power;
+
+    if delta > 0 {
+        let index = if let Some(power) = power_vec.pop() {
+            power.0
+        } else {
+            0
+        };
+        let offset_z = index as f32 * POWER_HEIGHT + POWER_OFFSET_Z;
+
+        for i in 0..delta {
+            let z = i as f32 * POWER_HEIGHT + offset_z;
+
+            commands.spawn((
+                PbrBundle {
+                    mesh: card_assets.gem_mesh.clone(),
+                    material: card_assets.gem_material.clone(),
+                    transform: Transform::from_xyz(POWER_OFFSET_X, 0.0, z)
+                        .with_scale(Vec3::splat(1.8)),
+                    ..default()
+                },
+                Power(index + i as u32),
+            ));
+        }
+    }
+}
+
 fn setup_board(
     mut commands: Commands,
     board_assets: Res<BoardAssets>,
@@ -473,6 +530,35 @@ fn setup_board(
 
     commands.insert_resource(Board::new());
     state.set(GameState::PlayerTurn);
+}
+
+fn spend_power(
+    card_assets: Res<CardAssets>,
+    mut ev_played: EventReader<CardPlayedEvent>,
+    mut player_state: ResMut<PlayerState>,
+    q_cost: Query<&Cost>,
+    mut q_power: Query<(&Power, &mut Handle<StandardMaterial>)>,
+) {
+    let mut power_spent = 0;
+
+    for ev in ev_played.iter() {
+        if let Ok(cost) = q_cost.get(ev.entity) {
+            player_state.available_power -= cost.get();
+            power_spent += cost.get();
+        }
+    }
+
+    if power_spent > 0 {
+        let mut power_vec = q_power.iter_mut().collect::<Vec<_>>();
+
+        power_vec.sort_by(|a, b| a.0 .0.partial_cmp(&b.0 .0).unwrap());
+
+        for _ in 0..power_spent {
+            if let Some((_, mut material)) = power_vec.pop() {
+                *material = card_assets.gem_empty_material.clone();
+            }
+        }
+    }
 }
 
 fn update_sigils<A: Attribute + Component, S: Sigil + Component>(

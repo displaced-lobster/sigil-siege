@@ -10,3 +10,6 @@ pub struct Hand(pub u32);
 
 #[derive(Component)]
 pub struct Picked;
+
+#[derive(Component)]
+pub struct Power(pub u32);
