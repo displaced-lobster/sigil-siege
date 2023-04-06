@@ -33,15 +33,18 @@ enum PlayCardSystemSet {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, SystemSet)]
-enum OpponentTurnSet {
+enum CommonTurnSet {
+    ApplyDamage,
     DrawCards,
     PlayCards,
     ApplyAbility,
+    UpdateSigils,
 }
 
 fn main() {
     App::new()
         .add_state::<GameState>()
+        .add_event::<CardKilledEvent>()
         .add_event::<CardPlayedEvent>()
         .add_plugins(DefaultPlugins)
         .add_plugin(PickingPlugin)
@@ -54,11 +57,21 @@ fn main() {
         .add_system(setup_board.in_set(OnUpdate(GameState::Setup)))
         .add_system(
             apply_ability::<Opponent, OpponentBoard>
-                .in_set(OpponentTurnSet::ApplyAbility)
+                .in_set(CommonTurnSet::ApplyAbility)
                 .in_set(OnUpdate(GameState::OpponentTurn)),
         )
         .add_system(apply_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(apply_damage)
+        .add_system(
+            apply_damage::<Opponent, OpponentBoard>
+                .run_if(resource_exists::<OpponentBoard>())
+                .in_set(CommonTurnSet::ApplyDamage)
+                .before(CommonTurnSet::DrawCards),
+        )
+        .add_system(
+            apply_damage::<Player, PlayerBoard>
+                .run_if(resource_exists::<PlayerBoard>())
+                .in_set(CommonTurnSet::ApplyDamage),
+        )
         .add_system(
             attack::<OpponentBoard, PlayerBoard, PlayerState>
                 .in_schedule(OnExit(GameState::OpponentTurn)),
@@ -67,17 +80,18 @@ fn main() {
             attack::<PlayerBoard, OpponentBoard, OpponentState>
                 .in_schedule(OnExit(GameState::PlayerTurn)),
         )
+        .add_system(cleanup_system)
         .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(
             draw_opponent_cards
-                .in_set(OpponentTurnSet::DrawCards)
+                .in_set(CommonTurnSet::DrawCards)
                 .in_schedule(OnEnter(GameState::OpponentTurn)),
         )
         .add_system(end_turn.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(
             end_turn_opponent
                 .in_set(OnUpdate(GameState::OpponentTurn))
-                .after(OpponentTurnSet::ApplyAbility),
+                .after(CommonTurnSet::ApplyAbility),
         )
         .add_system(hover_card_placeholder.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_dial.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -92,13 +106,13 @@ fn main() {
         )
         .add_system(
             play_opponent_cards
-                .in_set(OpponentTurnSet::PlayCards)
+                .in_set(CommonTurnSet::PlayCards)
                 .in_schedule(OnEnter(GameState::OpponentTurn))
-                .after(OpponentTurnSet::DrawCards),
+                .after(CommonTurnSet::DrawCards),
         )
         .add_system(
             receive_ability::<Opponent, OpponentBoard>
-                .in_set(OpponentTurnSet::ApplyAbility)
+                .in_set(CommonTurnSet::ApplyAbility)
                 .in_set(OnUpdate(GameState::OpponentTurn)),
         )
         .add_system(receive_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -106,7 +120,7 @@ fn main() {
         .add_system(reset_hand.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(
             reset_power::<Opponent, OpponentState>
-                .in_set(OpponentTurnSet::DrawCards)
+                .in_set(CommonTurnSet::DrawCards)
                 .in_schedule(OnEnter(GameState::OpponentTurn)),
         )
         .add_system(reset_power::<Player, PlayerState>.in_schedule(OnEnter(GameState::PlayerTurn)))
@@ -116,9 +130,21 @@ fn main() {
                 .in_set(OnUpdate(GameState::PlayerTurn)),
         )
         .add_system(spend_power.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(update_sigils::<Attack, AttackSigil>)
-        .add_system(update_sigils::<Cost, CostSigil>)
-        .add_system(update_sigils::<Health, HealthSigil>)
+        .add_system(
+            update_sigils::<Attack, AttackSigil>
+                .in_set(CommonTurnSet::UpdateSigils)
+                .after(CommonTurnSet::ApplyDamage),
+        )
+        .add_system(
+            update_sigils::<Cost, CostSigil>
+                .in_set(CommonTurnSet::UpdateSigils)
+                .after(CommonTurnSet::ApplyDamage),
+        )
+        .add_system(
+            update_sigils::<Health, HealthSigil>
+                .in_set(CommonTurnSet::UpdateSigils)
+                .after(CommonTurnSet::ApplyDamage),
+        )
         .run();
 }
 
@@ -278,13 +304,21 @@ fn apply_ability<C: Component, B: Board>(
     }
 }
 
-fn apply_damage(
+fn apply_damage<C: Component, B: Board>(
     mut commands: Commands,
-    mut q_damage: Query<(Entity, &Damage, &mut Health)>,
+    mut ev_killed: EventWriter<CardKilledEvent>,
+    mut board: ResMut<B>,
+    mut q_damage: Query<(Entity, &Damage, &mut Health), With<C>>,
 ) {
     for (entity, damage, mut health) in q_damage.iter_mut() {
         health.0 -= damage.0;
         commands.entity(entity).remove::<Damage>();
+
+        if health.0 <= 0 {
+            board.remove(entity);
+            commands.entity(entity).insert(CleanUp);
+            ev_killed.send(CardKilledEvent(entity));
+        }
     }
 }
 
@@ -314,6 +348,12 @@ fn attack<A: Board, B: Board, S: PlayableState>(
             state.take_damage(attack);
             info!("Player health: {}", state.get_health());
         }
+    }
+}
+
+fn cleanup_system(mut commands: Commands, mut q_cleanup: Query<(Entity, &CleanUp)>) {
+    for (entity, _) in q_cleanup.iter_mut() {
+        commands.entity(entity).despawn_recursive();
     }
 }
 
@@ -864,7 +904,6 @@ fn update_sigils<A: Attribute + Component, S: Sigil + Component>(
                     -S::offset_x()
                 };
                 let children = (0..attribute.get() - sigils.len() as i32)
-                    .into_iter()
                     .map(|i| {
                         let x = offset + i as f32 * S::width() * S::direction();
                         let index = sigils.len() as u32 + i as u32;

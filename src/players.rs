@@ -8,3 +8,6 @@ pub struct Opponent;
 
 #[derive(Component, Default)]
 pub struct Player;
+
+#[derive(Component)]
+pub struct CleanUp;

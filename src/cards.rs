@@ -175,6 +175,8 @@ impl CardAbilityEffect {
     }
 }
 
+pub struct CardKilledEvent(pub Entity);
+
 #[derive(Clone, Copy, Component, Debug, PartialEq, Eq)]
 pub enum CardType {
     Heart,

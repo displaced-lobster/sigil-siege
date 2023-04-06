@@ -36,6 +36,9 @@ pub trait Board: Resource {
         info!("Placing {:?} at {}", card_type, index);
         self.state_mut().place(index, entity, card_type);
     }
+    fn remove(&mut self, entity: Entity) {
+        self.state_mut().remove(entity);
+    }
     fn state(&self) -> &BoardState;
     fn state_mut(&mut self) -> &mut BoardState;
     fn unoccupied(&self, index: u32) -> bool {
@@ -99,6 +102,19 @@ impl BoardState {
 
     pub fn place(&mut self, index: u32, entity: Entity, card_type: CardType) {
         self.board[index as usize] = Some(BoardPlacement { entity, card_type });
+    }
+
+    pub fn remove(&mut self, entity: Entity) {
+        if let Some((i, _)) = self
+            .board
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.is_some())
+            .find(|(_, e)| e.unwrap().entity == entity)
+        {
+            info!("Removing index {} from board", i);
+            self.board[i] = None;
+        }
     }
 
     pub fn unoccupied(&self, index: u32) -> bool {
