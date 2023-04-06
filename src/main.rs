@@ -58,6 +58,7 @@ fn main() {
                 .in_set(OnUpdate(GameState::OpponentTurn)),
         )
         .add_system(apply_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(apply_damage)
         .add_system(
             attack::<OpponentBoard, PlayerBoard, PlayerState>
                 .in_schedule(OnExit(GameState::OpponentTurn)),
@@ -277,15 +278,26 @@ fn apply_ability<C: Component, B: Board>(
     }
 }
 
+fn apply_damage(
+    mut commands: Commands,
+    mut q_damage: Query<(Entity, &Damage, &mut Health)>,
+) {
+    for (entity, damage, mut health) in q_damage.iter_mut() {
+        health.0 -= damage.0;
+        commands.entity(entity).remove::<Damage>();
+    }
+}
+
 fn attack<A: Board, B: Board, S: PlayableState>(
+    mut commands: Commands,
     attacking: Res<A>,
     attacked: Res<B>,
     mut state: ResMut<S>,
-    mut q_card: Query<(&Attack, &mut Health)>,
+    q_card: Query<&Attack>,
 ) {
     for placement in attacking.all() {
         info!("Attacking");
-        let attack = if let Ok((attack, _)) = q_card.get(placement.entity) {
+        let attack = if let Ok(attack) = q_card.get(placement.entity) {
             attack.get()
         } else {
             info!("No attack component found");
@@ -296,12 +308,7 @@ fn attack<A: Board, B: Board, S: PlayableState>(
 
         if let Some(across) = attacking.across(attacked.state(), placement.entity) {
             info!("Attacking across");
-            if let Ok((_, mut health)) = q_card.get_mut(across.entity) {
-                info!("Initial health: {}", health.get());
-                let new_health = health.get() - attack;
-                info!("New health: {}", new_health);
-                health.set(new_health);
-            }
+            commands.entity(across.entity).insert(Damage(attack));
         } else {
             info!("Attacking player");
             state.take_damage(attack);

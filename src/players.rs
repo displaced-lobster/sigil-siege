@@ -1,5 +1,8 @@
 use bevy::prelude::*;
 
+#[derive(Component)]
+pub struct Damage(pub i32);
+
 #[derive(Component, Default)]
 pub struct Opponent;
 
