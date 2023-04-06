@@ -63,6 +63,7 @@ pub struct OpponentState {
     pub available_power: i32,
     deck_state: DeckState,
     hand: Vec<CardType>,
+    health: i32,
     pub max_hand_size: u32,
     pub max_power: u32,
     pub power: u32,
@@ -99,6 +100,7 @@ impl Default for OpponentState {
             available_power: 0,
             deck_state: DeckState::default(),
             hand: Vec::new(),
+            health: 12,
             max_hand_size: 5,
             max_power: 6,
             power: 0,
@@ -126,6 +128,10 @@ impl PlayableState for OpponentState {
         self.available_power
     }
 
+    fn get_health(&self) -> i32 {
+        self.health
+    }
+
     fn get_max_power(&self) -> u32 {
         self.max_power
     }
@@ -141,6 +147,10 @@ impl PlayableState for OpponentState {
     fn set_power(&mut self, power: i32) {
         self.power = power as u32;
     }
+
+    fn take_damage(&mut self, damage: i32) {
+        self.health -= damage;
+    }
 }
 
 pub trait PlayableState: Resource {
@@ -148,6 +158,7 @@ pub trait PlayableState: Resource {
     fn draw_card(&mut self) -> Option<CardType>;
     fn draw_count(&self) -> u32;
     fn get_available_power(&self) -> i32;
+    fn get_health(&self) -> i32;
     fn get_max_power(&self) -> u32;
     fn get_power(&self) -> u32;
     fn set_available_power(&mut self, power: i32);
@@ -155,12 +166,14 @@ pub trait PlayableState: Resource {
     fn show_power() -> bool {
         false
     }
+    fn take_damage(&mut self, damage: i32);
 }
 
 #[derive(Resource)]
 pub struct PlayerState {
     pub available_power: i32,
     deck_state: DeckState,
+    pub health: i32,
     pub max_hand_size: u32,
     pub max_power: u32,
     pub power: u32,
@@ -186,6 +199,10 @@ impl PlayableState for PlayerState {
         self.available_power
     }
 
+    fn get_health(&self) -> i32 {
+        self.health
+    }
+
     fn get_max_power(&self) -> u32 {
         self.max_power
     }
@@ -205,6 +222,10 @@ impl PlayableState for PlayerState {
     fn show_power() -> bool {
         true
     }
+
+    fn take_damage(&mut self, damage: i32) {
+        self.health -= damage;
+    }
 }
 
 impl Default for PlayerState {
@@ -212,6 +233,7 @@ impl Default for PlayerState {
         Self {
             available_power: 0,
             deck_state: DeckState::default(),
+            health: 12,
             max_hand_size: 5,
             max_power: 5,
             power: 0,

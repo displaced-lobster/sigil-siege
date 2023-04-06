@@ -6,12 +6,41 @@ use crate::cards::CardType;
 pub const BOARD_HEIGHT: f32 = 0.25;
 
 pub trait Board: Resource {
-    fn adjacent(&self, entity: Entity) -> (Option<BoardPlacement>, Option<BoardPlacement>);
-    fn others(&self, entity: Entity) -> Vec<BoardPlacement>;
-    fn others_of_type(&self, entity: Entity, card_type: CardType) -> Vec<BoardPlacement>;
-    fn place(&mut self, index: u32, entity: Entity, card_type: CardType);
+    fn across(&self, other: &BoardState, entity: Entity) -> Option<BoardPlacement> {
+        if let Some((i, _)) = self
+            .state()
+            .board
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.is_some())
+            .find(|(_, e)| e.unwrap().entity == entity)
+        {
+            other.board[i]
+        } else {
+            None
+        }
+    }
+    fn adjacent(&self, entity: Entity) -> (Option<BoardPlacement>, Option<BoardPlacement>) {
+        self.state().adjacent(entity)
+    }
+    fn all(&self) -> Vec<BoardPlacement> {
+        self.state().board.iter().filter_map(|e| *e).collect()
+    }
+    fn others(&self, entity: Entity) -> Vec<BoardPlacement> {
+        self.state().others(entity).collect()
+    }
+    fn others_of_type(&self, entity: Entity, card_type: CardType) -> Vec<BoardPlacement> {
+        self.state().others_of_type(entity, card_type).collect()
+    }
+    fn place(&mut self, index: u32, entity: Entity, card_type: CardType) {
+        info!("Placing {:?} at {}", card_type, index);
+        self.state_mut().place(index, entity, card_type);
+    }
     fn state(&self) -> &BoardState;
-    fn unoccupied(&self, index: u32) -> bool;
+    fn state_mut(&mut self) -> &mut BoardState;
+    fn unoccupied(&self, index: u32) -> bool {
+        self.state().unoccupied(index)
+    }
 }
 
 #[derive(Resource)]
@@ -126,23 +155,11 @@ impl OpponentBoard {
 }
 
 impl Board for OpponentBoard {
-    fn adjacent(&self, entity: Entity) -> (Option<BoardPlacement>, Option<BoardPlacement>) {
-        self.board_state.adjacent(entity)
-    }
-    fn others(&self, entity: Entity) -> Vec<BoardPlacement> {
-        self.board_state.others(entity).collect()
-    }
-    fn others_of_type(&self, entity: Entity, card_type: CardType) -> Vec<BoardPlacement> {
-        self.board_state.others_of_type(entity, card_type).collect()
-    }
-    fn place(&mut self, index: u32, entity: Entity, card_type: CardType) {
-        self.board_state.place(index, entity, card_type);
-    }
     fn state(&self) -> &BoardState {
         &self.board_state
     }
-    fn unoccupied(&self, index: u32) -> bool {
-        self.board_state.unoccupied(index)
+    fn state_mut(&mut self) -> &mut BoardState {
+        &mut self.board_state
     }
 }
 
@@ -160,23 +177,11 @@ impl PlayerBoard {
 }
 
 impl Board for PlayerBoard {
-    fn adjacent(&self, entity: Entity) -> (Option<BoardPlacement>, Option<BoardPlacement>) {
-        self.board_state.adjacent(entity)
-    }
-    fn others(&self, entity: Entity) -> Vec<BoardPlacement> {
-        self.board_state.others(entity).collect()
-    }
-    fn others_of_type(&self, entity: Entity, card_type: CardType) -> Vec<BoardPlacement> {
-        self.board_state.others_of_type(entity, card_type).collect()
-    }
-    fn place(&mut self, index: u32, entity: Entity, card_type: CardType) {
-        self.board_state.place(index, entity, card_type);
-    }
     fn state(&self) -> &BoardState {
         &self.board_state
     }
-    fn unoccupied(&self, index: u32) -> bool {
-        self.board_state.unoccupied(index)
+    fn state_mut(&mut self) -> &mut BoardState {
+        &mut self.board_state
     }
 }
 

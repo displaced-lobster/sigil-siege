@@ -17,13 +17,13 @@ pub const CARD_HALF_THICKNESS: f32 = CARD_THICKNESS / 2.0;
 pub const CARD_HEIGHT: f32 = 3.0;
 pub const CARD_WIDTH: f32 = 2.0;
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct Attack(pub i32);
 
 #[derive(Component)]
 pub struct AttackSigil(pub u32);
 
-pub trait Attribute {
+pub trait Attribute: std::fmt::Debug {
     fn get(&self) -> i32;
     fn set(&mut self, value: i32);
 }
@@ -58,13 +58,13 @@ impl Attribute for Health {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct Cost(pub i32);
 
 #[derive(Component)]
 pub struct CostSigil(pub u32);
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct Health(pub i32);
 
 #[derive(Component)]
@@ -247,6 +247,7 @@ impl CardType {
 pub struct PendingAbility;
 
 pub trait Sigil {
+    fn at_index(index: u32) -> Self;
     fn direction() -> f32 {
         1.0
     }
@@ -271,6 +272,10 @@ pub trait Sigil {
 }
 
 impl Sigil for AttackSigil {
+    fn at_index(index: u32) -> Self {
+        Self(index)
+    }
+
     fn index(&self) -> u32 {
         self.0
     }
@@ -289,6 +294,10 @@ impl Sigil for AttackSigil {
 }
 
 impl Sigil for CostSigil {
+    fn at_index(index: u32) -> Self {
+        Self(index)
+    }
+
     fn direction() -> f32 {
         -1.0
     }
@@ -323,6 +332,10 @@ impl Sigil for CostSigil {
 }
 
 impl Sigil for HealthSigil {
+    fn at_index(index: u32) -> Self {
+        Self(index)
+    }
+
     fn index(&self) -> u32 {
         self.0
     }

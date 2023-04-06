@@ -58,6 +58,14 @@ fn main() {
                 .in_set(OnUpdate(GameState::OpponentTurn)),
         )
         .add_system(apply_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(
+            attack::<OpponentBoard, PlayerBoard, PlayerState>
+                .in_schedule(OnExit(GameState::OpponentTurn)),
+        )
+        .add_system(
+            attack::<PlayerBoard, OpponentBoard, OpponentState>
+                .in_schedule(OnExit(GameState::PlayerTurn)),
+        )
         .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(
             draw_opponent_cards
@@ -265,6 +273,39 @@ fn apply_ability<C: Component, B: Board>(
                     effect.apply(&mut attack, &mut health);
                 }
             }
+        }
+    }
+}
+
+fn attack<A: Board, B: Board, S: PlayableState>(
+    attacking: Res<A>,
+    attacked: Res<B>,
+    mut state: ResMut<S>,
+    mut q_card: Query<(&Attack, &mut Health)>,
+) {
+    for placement in attacking.all() {
+        info!("Attacking");
+        let attack = if let Ok((attack, _)) = q_card.get(placement.entity) {
+            attack.get()
+        } else {
+            info!("No attack component found");
+            continue;
+        };
+
+        info!("Attacking with {}", attack);
+
+        if let Some(across) = attacking.across(attacked.state(), placement.entity) {
+            info!("Attacking across");
+            if let Ok((_, mut health)) = q_card.get_mut(across.entity) {
+                info!("Initial health: {}", health.get());
+                let new_health = health.get() - attack;
+                info!("New health: {}", new_health);
+                health.set(new_health);
+            }
+        } else {
+            info!("Attacking player");
+            state.take_damage(attack);
+            info!("Player health: {}", state.get_health());
         }
     }
 }
@@ -783,6 +824,7 @@ fn update_sigils<A: Attribute + Component, S: Sigil + Component>(
     q_sigil: Query<(Entity, &Parent, &S), Without<A>>,
 ) {
     for (entity, attribute) in q_card.iter() {
+        info!("Changes detected for {:?}", attribute);
         let mut sigils = q_sigil
             .iter()
             .filter(|(_, parent, _)| parent.get() == entity)
@@ -794,11 +836,13 @@ fn update_sigils<A: Attribute + Component, S: Sigil + Component>(
         });
 
         if sigils.len() as i32 == attribute.get() {
+            info!("No changes needed for {:?}", attribute);
             continue;
         }
 
         match sigils.len() as i32 > attribute.get() {
             true => {
+                info!("Removing sigils for {:?}", attribute);
                 while !sigils.is_empty() && sigils.len() as i32 > attribute.get() {
                     if let Some((entity, _)) = sigils.pop() {
                         commands.entity(entity).despawn_recursive();
@@ -806,6 +850,7 @@ fn update_sigils<A: Attribute + Component, S: Sigil + Component>(
                 }
             }
             false => {
+                info!("Adding sigils for {:?}", attribute);
                 let offset = if let Some((_, sigil)) = sigils.pop() {
                     S::direction() * sigil.index() as f32 * S::width() - S::offset_x()
                 } else {
@@ -815,15 +860,19 @@ fn update_sigils<A: Attribute + Component, S: Sigil + Component>(
                     .into_iter()
                     .map(|i| {
                         let x = offset + i as f32 * S::width() * S::direction();
+                        let index = sigils.len() as u32 + i as u32;
 
                         commands
-                            .spawn((PbrBundle {
-                                mesh: S::mesh(&card_assets),
-                                material: S::material(&card_assets),
-                                transform: Transform::from_xyz(x, S::offset_y(), S::offset_z())
-                                    .with_scale(S::scale()),
-                                ..default()
-                            },))
+                            .spawn((
+                                PbrBundle {
+                                    mesh: S::mesh(&card_assets),
+                                    material: S::material(&card_assets),
+                                    transform: Transform::from_xyz(x, S::offset_y(), S::offset_z())
+                                        .with_scale(S::scale()),
+                                    ..default()
+                                },
+                                S::at_index(index),
+                            ))
                             .id()
                     })
                     .collect::<Vec<_>>();
