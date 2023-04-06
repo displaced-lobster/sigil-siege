@@ -107,9 +107,9 @@ fn main() {
                 .in_set(OnUpdate(GameState::PlayerTurn)),
         )
         .add_system(spend_power.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(update_sigils::<Attack, AttackSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(update_sigils::<Cost, CostSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(update_sigils::<Health, HealthSigil>.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(update_sigils::<Attack, AttackSigil>)
+        .add_system(update_sigils::<Cost, CostSigil>)
+        .add_system(update_sigils::<Health, HealthSigil>)
         .run();
 }
 
