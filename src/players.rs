@@ -11,3 +11,9 @@ pub struct Player;
 
 #[derive(Component)]
 pub struct CleanUp;
+
+#[derive(PartialEq, Eq)]
+pub enum AttackedEvent {
+    Player,
+    Opponent,
+}

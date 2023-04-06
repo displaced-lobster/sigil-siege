@@ -5,5 +5,9 @@ pub enum GameState {
     #[default]
     Setup,
     PlayerTurn,
+    PlayerAttacking,
     OpponentTurn,
+    OpponentAttacking,
+    Win,
+    Lose,
 }

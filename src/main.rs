@@ -34,7 +34,6 @@ enum PlayCardSystemSet {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, SystemSet)]
 enum CommonTurnSet {
-    ApplyDamage,
     DrawCards,
     PlayCards,
     ApplyAbility,
@@ -44,6 +43,7 @@ enum CommonTurnSet {
 fn main() {
     App::new()
         .add_state::<GameState>()
+        .add_event::<AttackedEvent>()
         .add_event::<CardKilledEvent>()
         .add_event::<CardPlayedEvent>()
         .add_plugins(DefaultPlugins)
@@ -64,22 +64,23 @@ fn main() {
         .add_system(
             apply_damage::<Opponent, OpponentBoard>
                 .run_if(resource_exists::<OpponentBoard>())
-                .in_set(CommonTurnSet::ApplyDamage)
-                .before(CommonTurnSet::DrawCards),
+                .in_schedule(OnExit(GameState::PlayerAttacking)),
         )
         .add_system(
             apply_damage::<Player, PlayerBoard>
                 .run_if(resource_exists::<PlayerBoard>())
-                .in_set(CommonTurnSet::ApplyDamage),
+                .in_schedule(OnExit(GameState::OpponentAttacking)),
         )
         .add_system(
             attack::<OpponentBoard, PlayerBoard, PlayerState>
-                .in_schedule(OnExit(GameState::OpponentTurn)),
+                .in_set(OnUpdate(GameState::OpponentAttacking)),
         )
         .add_system(
             attack::<PlayerBoard, OpponentBoard, OpponentState>
-                .in_schedule(OnExit(GameState::PlayerTurn)),
+                .in_set(OnUpdate(GameState::PlayerAttacking)),
         )
+        .add_system(check_lose_condition.run_if(resource_exists::<PlayerState>()))
+        .add_system(check_win_condition.run_if(resource_exists::<OpponentState>()))
         .add_system(cleanup_system)
         .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(
@@ -88,11 +89,7 @@ fn main() {
                 .in_schedule(OnEnter(GameState::OpponentTurn)),
         )
         .add_system(end_turn.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(
-            end_turn_opponent
-                .in_set(OnUpdate(GameState::OpponentTurn))
-                .after(CommonTurnSet::ApplyAbility),
-        )
+        .add_system(end_turn_opponent.in_set(OnUpdate(GameState::OpponentTurn)))
         .add_system(hover_card_placeholder.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_dial.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_hand.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -130,21 +127,9 @@ fn main() {
                 .in_set(OnUpdate(GameState::PlayerTurn)),
         )
         .add_system(spend_power.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(
-            update_sigils::<Attack, AttackSigil>
-                .in_set(CommonTurnSet::UpdateSigils)
-                .after(CommonTurnSet::ApplyDamage),
-        )
-        .add_system(
-            update_sigils::<Cost, CostSigil>
-                .in_set(CommonTurnSet::UpdateSigils)
-                .after(CommonTurnSet::ApplyDamage),
-        )
-        .add_system(
-            update_sigils::<Health, HealthSigil>
-                .in_set(CommonTurnSet::UpdateSigils)
-                .after(CommonTurnSet::ApplyDamage),
-        )
+        .add_system(update_sigils::<Attack, AttackSigil>.in_set(CommonTurnSet::UpdateSigils))
+        .add_system(update_sigils::<Cost, CostSigil>.in_set(CommonTurnSet::UpdateSigils))
+        .add_system(update_sigils::<Health, HealthSigil>.in_set(CommonTurnSet::UpdateSigils))
         .run();
 }
 
@@ -324,9 +309,11 @@ fn apply_damage<C: Component, B: Board>(
 
 fn attack<A: Board, B: Board, S: PlayableState>(
     mut commands: Commands,
+    mut state: ResMut<NextState<GameState>>,
     attacking: Res<A>,
     attacked: Res<B>,
-    mut state: ResMut<S>,
+    mut player_state: ResMut<S>,
+    mut ev_attacked: EventWriter<AttackedEvent>,
     q_card: Query<&Attack>,
 ) {
     for placement in attacking.all() {
@@ -345,8 +332,45 @@ fn attack<A: Board, B: Board, S: PlayableState>(
             commands.entity(across.entity).insert(Damage(attack));
         } else {
             info!("Attacking player");
-            state.take_damage(attack);
-            info!("Player health: {}", state.get_health());
+            player_state.take_damage(attack);
+            info!("Player health: {}", player_state.get_health());
+            ev_attacked.send(S::attacked_event());
+        }
+    }
+
+    info!("Changing state to {:?}", S::next_turn());
+
+    state.set(S::next_turn());
+}
+
+fn check_lose_condition(
+    mut ev_attacked: EventReader<AttackedEvent>,
+    player_state: Res<PlayerState>,
+    mut state: ResMut<NextState<GameState>>,
+) {
+    for _ in ev_attacked
+        .iter()
+        .filter(|ev| **ev == AttackedEvent::Player)
+    {
+        if player_state.get_health() <= 0 {
+            info!("Lose!");
+            state.set(GameState::Lose);
+        }
+    }
+}
+
+fn check_win_condition(
+    mut ev_attacked: EventReader<AttackedEvent>,
+    opponent_state: Res<OpponentState>,
+    mut state: ResMut<NextState<GameState>>,
+) {
+    for _ in ev_attacked
+        .iter()
+        .filter(|ev| **ev == AttackedEvent::Opponent)
+    {
+        if opponent_state.get_health() <= 0 {
+            info!("Win!");
+            state.set(GameState::Win);
         }
     }
 }
@@ -492,14 +516,14 @@ fn end_turn(
         if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
             if let Ok(mut transform) = q_dial.get_mut(*e) {
                 *transform = transform.with_rotation(Quat::from_rotation_y(180.0_f32.to_radians()));
-                state.set(GameState::OpponentTurn);
+                state.set(GameState::PlayerAttacking);
             }
         }
     }
 }
 
 fn end_turn_opponent(mut state: ResMut<NextState<GameState>>) {
-    state.set(GameState::PlayerTurn);
+    state.set(GameState::OpponentAttacking);
 }
 
 fn mark_cards_to_draw(
