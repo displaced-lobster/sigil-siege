@@ -32,14 +32,6 @@ enum PlayCardSystemSet {
     CardPlayed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, SystemSet)]
-enum CommonTurnSet {
-    DrawCards,
-    PlayCards,
-    ApplyAbility,
-    UpdateSigils,
-}
-
 fn main() {
     App::new()
         .add_state::<GameState>()
@@ -56,11 +48,9 @@ fn main() {
         .add_startup_system(setup)
         .add_system(setup_board.in_set(OnUpdate(GameState::Setup)))
         .add_system(
-            apply_ability::<Opponent, OpponentBoard>
-                .in_set(CommonTurnSet::ApplyAbility)
-                .in_set(OnUpdate(GameState::OpponentTurn)),
+            apply_ability::<Opponent, OpponentBoard>.run_if(resource_exists::<OpponentBoard>()),
         )
-        .add_system(apply_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(apply_ability::<Player, PlayerBoard>.run_if(resource_exists::<PlayerBoard>()))
         .add_system(
             apply_damage::<Opponent, OpponentBoard>
                 .run_if(resource_exists::<OpponentBoard>())
@@ -83,11 +73,7 @@ fn main() {
         .add_system(check_win_condition.run_if(resource_exists::<OpponentState>()))
         .add_system(cleanup_system)
         .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(
-            draw_opponent_cards
-                .in_set(CommonTurnSet::DrawCards)
-                .in_schedule(OnEnter(GameState::OpponentTurn)),
-        )
+        .add_system(draw_opponent_cards.in_schedule(OnEnter(GameState::OpponentPlayCards)))
         .add_system(end_turn.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(end_turn_opponent.in_set(OnUpdate(GameState::OpponentTurn)))
         .add_system(hover_card_placeholder.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -101,24 +87,15 @@ fn main() {
                 .in_set(OnUpdate(GameState::PlayerTurn))
                 .before(PlayCardSystemSet::CardPlayed),
         )
+        .add_system(play_opponent_cards.in_set(OnUpdate(GameState::OpponentPlayCards)))
         .add_system(
-            play_opponent_cards
-                .in_set(CommonTurnSet::PlayCards)
-                .in_schedule(OnEnter(GameState::OpponentTurn))
-                .after(CommonTurnSet::DrawCards),
+            receive_ability::<Opponent, OpponentBoard>.run_if(resource_exists::<OpponentBoard>()),
         )
-        .add_system(
-            receive_ability::<Opponent, OpponentBoard>
-                .in_set(CommonTurnSet::ApplyAbility)
-                .in_set(OnUpdate(GameState::OpponentTurn)),
-        )
-        .add_system(receive_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
+        // .add_system(receive_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(reset_dial.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(reset_hand.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(
-            reset_power::<Opponent, OpponentState>
-                .in_set(CommonTurnSet::DrawCards)
-                .in_schedule(OnEnter(GameState::OpponentTurn)),
+            reset_power::<Opponent, OpponentState>.in_schedule(OnEnter(GameState::OpponentTurn)),
         )
         .add_system(reset_power::<Player, PlayerState>.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(
@@ -127,9 +104,9 @@ fn main() {
                 .in_set(OnUpdate(GameState::PlayerTurn)),
         )
         .add_system(spend_power.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(update_sigils::<Attack, AttackSigil>.in_set(CommonTurnSet::UpdateSigils))
-        .add_system(update_sigils::<Cost, CostSigil>.in_set(CommonTurnSet::UpdateSigils))
-        .add_system(update_sigils::<Health, HealthSigil>.in_set(CommonTurnSet::UpdateSigils))
+        .add_system(update_sigils::<Attack, AttackSigil>)
+        .add_system(update_sigils::<Cost, CostSigil>)
+        .add_system(update_sigils::<Health, HealthSigil>)
         .run();
 }
 
@@ -267,7 +244,7 @@ fn setup(
 fn apply_ability<C: Component, B: Board>(
     board: Res<B>,
     mut ev_played: EventReader<CardPlayedEvent>,
-    mut q_cards: Query<(&CardType, &mut Attack, &mut Health), (With<C>, Without<Hand>)>,
+    mut q_cards: Query<(&CardType, &mut Attack, &mut Health), With<C>>,
 ) {
     for ev in ev_played.iter() {
         let (affects, effect) = if let Ok((card_type, _, _)) = q_cards.get_mut(ev.entity) {
@@ -278,6 +255,8 @@ fn apply_ability<C: Component, B: Board>(
         } else {
             (None, None)
         };
+
+        info!("affects: {:?}, effect: {:?}", affects, effect);
 
         if let (Some(affects), Some(effect)) = (affects, effect) {
             for entity in affects {
@@ -309,6 +288,7 @@ fn apply_damage<C: Component, B: Board>(
 
 fn attack<A: Board, B: Board, S: PlayableState>(
     mut commands: Commands,
+    current_state: Res<State<GameState>>,
     mut state: ResMut<NextState<GameState>>,
     attacking: Res<A>,
     attacked: Res<B>,
@@ -317,7 +297,6 @@ fn attack<A: Board, B: Board, S: PlayableState>(
     q_card: Query<&Attack>,
 ) {
     for placement in attacking.all() {
-        info!("Attacking");
         let attack = if let Ok(attack) = q_card.get(placement.entity) {
             attack.get()
         } else {
@@ -338,9 +317,8 @@ fn attack<A: Board, B: Board, S: PlayableState>(
         }
     }
 
-    info!("Changing state to {:?}", S::next_turn());
-
-    state.set(S::next_turn());
+    let next_state = current_state.0.next().unwrap();
+    state.set(next_state);
 }
 
 fn check_lose_condition(
@@ -597,6 +575,7 @@ fn play_card(
                     let index = placeholder.0;
 
                     if board.unoccupied(index) {
+                        info!("Playing card at index {}", index);
                         *material = placeholder_materials.invisable.clone();
                         transform.translation = placeholder_transform.translation;
                         board.place(index, picked_entity, *card_type);
@@ -620,12 +599,13 @@ fn play_card(
 fn play_opponent_cards(
     mut commands: Commands,
     card_assets: Res<CardAssets>,
+    mut state: ResMut<NextState<GameState>>,
     mut board: ResMut<OpponentBoard>,
     mut opponent_state: ResMut<OpponentState>,
     mut ev_played: EventWriter<CardPlayedEvent>,
     q_placeholder: Query<(&CardPlaceholder, &Transform), With<Opponent>>,
 ) {
-    while board.has_empty_place() && opponent_state.can_play_card() {
+    if board.has_empty_place() && opponent_state.can_play_card() {
         let card = opponent_state.play_card().unwrap();
         let index = board.random_empty_place().unwrap();
         let (_, transform) = q_placeholder.iter().find(|(p, _)| p.0 == index).unwrap();
@@ -658,6 +638,8 @@ fn play_opponent_cards(
         board.place(index, entity, card);
         ev_played.send(CardPlayedEvent { entity, index });
         opponent_state.available_power -= attributes.cost as i32;
+    } else {
+        state.set(GameState::OpponentPlayCards.next().unwrap());
     }
 }
 
@@ -906,12 +888,14 @@ fn update_sigils<A: Attribute + Component, S: Sigil + Component>(
             sigil_a.index().partial_cmp(&sigil_b.index()).unwrap()
         });
 
-        if sigils.len() as i32 == attribute.get() {
+        let sigil_count = sigils.len() as i32;
+
+        if sigil_count == attribute.get() {
             info!("No changes needed for {:?}", attribute);
             continue;
         }
 
-        match sigils.len() as i32 > attribute.get() {
+        match sigil_count > attribute.get() {
             true => {
                 info!("Removing sigils for {:?}", attribute);
                 while !sigils.is_empty() && sigils.len() as i32 > attribute.get() {
@@ -922,15 +906,11 @@ fn update_sigils<A: Attribute + Component, S: Sigil + Component>(
             }
             false => {
                 info!("Adding sigils for {:?}", attribute);
-                let offset = if let Some((_, sigil)) = sigils.pop() {
-                    S::direction() * sigil.index() as f32 * S::width() - S::offset_x()
-                } else {
-                    -S::offset_x()
-                };
-                let children = (0..attribute.get() - sigils.len() as i32)
+                let offset = S::direction() * sigil_count as f32 * S::width() - S::offset_x();
+                let children = (0..attribute.get() - sigil_count)
                     .map(|i| {
                         let x = offset + i as f32 * S::width() * S::direction();
-                        let index = sigils.len() as u32 + i as u32;
+                        let index = sigil_count as u32 + i as u32;
 
                         commands
                             .spawn((

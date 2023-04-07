@@ -113,6 +113,7 @@ impl CardAbility {
 
         match self {
             Self::AttackUpAdjacent => {
+                info!("I am an attack up adjacent card!");
                 let (left, right) = board.adjacent(entity);
 
                 if let Some(left) = left {
@@ -124,6 +125,7 @@ impl CardAbility {
                 }
             }
             Self::HealthUpAdjacent => {
+                info!("I am a health up adjacent card!");
                 let (left, right) = board.adjacent(entity);
 
                 if let Some(left) = left {
@@ -135,6 +137,7 @@ impl CardAbility {
                 }
             }
             Self::HealthUpAll => {
+                info!("I am a health up all card!");
                 for entity in board.others(entity) {
                     affects.push(entity.entity);
                 }
@@ -163,6 +166,7 @@ impl CardAbility {
     }
 }
 
+#[derive(Debug)]
 pub struct CardAbilityEffect {
     pub attack: i32,
     pub health: i32,

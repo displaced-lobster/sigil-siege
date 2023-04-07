@@ -6,8 +6,24 @@ pub enum GameState {
     Setup,
     PlayerTurn,
     PlayerAttacking,
+    OpponentPlayCards,
     OpponentTurn,
     OpponentAttacking,
     Win,
     Lose,
+}
+
+impl GameState {
+    pub fn next(&self) -> Option<Self> {
+        match self {
+            Self::Setup => Some(Self::PlayerTurn),
+            Self::PlayerTurn => Some(Self::PlayerAttacking),
+            Self::PlayerAttacking => Some(Self::OpponentPlayCards),
+            Self::OpponentPlayCards => Some(Self::OpponentTurn),
+            Self::OpponentTurn => Some(Self::OpponentAttacking),
+            Self::OpponentAttacking => Some(Self::PlayerTurn),
+            Self::Win => None,
+            Self::Lose => None,
+        }
+    }
 }

@@ -60,10 +60,11 @@ impl BoardState {
         let index = self
             .board
             .iter()
-            .filter_map(|e| *e)
-            .position(|e| e.entity == entity);
+            .enumerate()
+            .find(|(_, e)| e.is_some() && e.unwrap().entity == entity);
 
-        if let Some(index) = index {
+        if let Some((index, _)) = index {
+            info!("Checking adjacent for index {}", index);
             let left = if index == 0 {
                 None
             } else {

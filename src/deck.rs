@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use rand::Rng;
 
-use crate::{cards::CardType, players::AttackedEvent, states::GameState};
+use crate::{cards::CardType, players::AttackedEvent};
 
 #[derive(Component)]
 pub struct Deck(pub u32);
@@ -144,10 +144,6 @@ impl PlayableState for OpponentState {
         self.power
     }
 
-    fn next_turn() -> GameState {
-        GameState::OpponentTurn
-    }
-
     fn set_available_power(&mut self, power: i32) {
         self.available_power = power;
     }
@@ -170,7 +166,6 @@ pub trait PlayableState: Resource {
     fn get_health(&self) -> i32;
     fn get_max_power(&self) -> u32;
     fn get_power(&self) -> u32;
-    fn next_turn() -> GameState;
     fn set_available_power(&mut self, power: i32);
     fn set_power(&mut self, power: i32);
     fn show_power() -> bool {
@@ -223,10 +218,6 @@ impl PlayableState for PlayerState {
 
     fn get_power(&self) -> u32 {
         self.power
-    }
-
-    fn next_turn() -> GameState {
-        GameState::PlayerTurn
     }
 
     fn set_available_power(&mut self, power: i32) {
