@@ -177,9 +177,12 @@ impl CardAbilityEffect {
         attack.0 = (attack.0 + self.attack).min(ABILITY_MAX);
         health.0 = (health.0 + self.health).min(ABILITY_MAX);
     }
-}
 
-pub struct CardKilledEvent(pub Entity);
+    pub fn remove(&self, attack: &mut Attack, health: &mut Health) {
+        attack.0 = (attack.0 - self.attack).max(0);
+        health.0 = (health.0 - self.health).max(0);
+    }
+}
 
 #[derive(Clone, Copy, Component, Debug, PartialEq, Eq)]
 pub enum CardType {

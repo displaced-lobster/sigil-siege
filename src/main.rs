@@ -36,7 +36,6 @@ fn main() {
     App::new()
         .add_state::<GameState>()
         .add_event::<AttackedEvent>()
-        .add_event::<CardKilledEvent>()
         .add_event::<CardPlayedEvent>()
         .add_plugins(DefaultPlugins)
         .add_plugin(PickingPlugin)
@@ -51,16 +50,8 @@ fn main() {
             apply_ability::<Opponent, OpponentBoard>.run_if(resource_exists::<OpponentBoard>()),
         )
         .add_system(apply_ability::<Player, PlayerBoard>.run_if(resource_exists::<PlayerBoard>()))
-        .add_system(
-            apply_damage::<Opponent, OpponentBoard>
-                .run_if(resource_exists::<OpponentBoard>())
-                .in_schedule(OnExit(GameState::PlayerAttacking)),
-        )
-        .add_system(
-            apply_damage::<Player, PlayerBoard>
-                .run_if(resource_exists::<PlayerBoard>())
-                .in_schedule(OnExit(GameState::OpponentAttacking)),
-        )
+        .add_system(apply_damage.in_schedule(OnExit(GameState::OpponentAttacking)))
+        .add_system(apply_damage.in_schedule(OnExit(GameState::PlayerAttacking)))
         .add_system(
             attack::<OpponentBoard, PlayerBoard, PlayerState>
                 .in_set(OnUpdate(GameState::OpponentAttacking)),
@@ -91,7 +82,11 @@ fn main() {
         .add_system(
             receive_ability::<Opponent, OpponentBoard>.run_if(resource_exists::<OpponentBoard>()),
         )
-        // .add_system(receive_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(receive_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(
+            remove_killed::<Opponent, OpponentBoard>.run_if(resource_exists::<OpponentBoard>()),
+        )
+        .add_system(remove_killed::<Player, PlayerBoard>.run_if(resource_exists::<PlayerBoard>()))
         .add_system(reset_dial.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(reset_hand.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(
@@ -268,20 +263,14 @@ fn apply_ability<C: Component, B: Board>(
     }
 }
 
-fn apply_damage<C: Component, B: Board>(
-    mut commands: Commands,
-    mut ev_killed: EventWriter<CardKilledEvent>,
-    mut board: ResMut<B>,
-    mut q_damage: Query<(Entity, &Damage, &mut Health), With<C>>,
-) {
+fn apply_damage(mut commands: Commands, mut q_damage: Query<(Entity, &Damage, &mut Health)>) {
     for (entity, damage, mut health) in q_damage.iter_mut() {
         health.0 -= damage.0;
         commands.entity(entity).remove::<Damage>();
 
         if health.0 <= 0 {
-            board.remove(entity);
-            commands.entity(entity).insert(CleanUp);
-            ev_killed.send(CardKilledEvent(entity));
+            info!("Card killed by damage");
+            commands.entity(entity).insert(Killed);
         }
     }
 }
@@ -604,7 +593,12 @@ fn play_opponent_cards(
     mut opponent_state: ResMut<OpponentState>,
     mut ev_played: EventWriter<CardPlayedEvent>,
     q_placeholder: Query<(&CardPlaceholder, &Transform), With<Opponent>>,
+    q_killed: Query<(With<Killed>, With<Opponent>, Without<CardPlaceholder>)>,
 ) {
+    if q_killed.iter().count() > 0 {
+        return;
+    }
+
     if board.has_empty_place() && opponent_state.can_play_card() {
         let card = opponent_state.play_card().unwrap();
         let index = board.random_empty_place().unwrap();
@@ -663,6 +657,33 @@ fn receive_ability<C: Component, B: Board>(
 
             commands.entity(ev.entity).remove::<PendingAbility>();
         }
+    }
+}
+
+fn remove_killed<C: Component, B: Board>(
+    mut commands: Commands,
+    mut board: ResMut<B>,
+    q_killed: Query<(Entity, &CardType), (With<C>, With<Killed>)>,
+    mut q_cards: Query<(&mut Attack, &mut Health), (With<C>, Without<Killed>)>,
+) {
+    if let Some((entity, card_type)) = q_killed.iter().next() {
+        info!("Killed card found");
+        let affects = card_type.affects(entity, board.state());
+        let effect = card_type.effect();
+
+        for entity in affects {
+            if let Ok((mut attack, mut health)) = q_cards.get_mut(entity) {
+                effect.remove(&mut attack, &mut health);
+
+                if health.0 <= 0 {
+                    info!("Card killed by side-effect");
+                    commands.entity(entity).insert(Killed);
+                }
+            }
+        }
+
+        board.remove(entity);
+        commands.entity(entity).despawn_recursive();
     }
 }
 

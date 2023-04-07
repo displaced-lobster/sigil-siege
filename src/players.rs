@@ -17,3 +17,6 @@ pub enum AttackedEvent {
     Player,
     Opponent,
 }
+
+#[derive(Component)]
+pub struct Killed;
