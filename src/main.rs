@@ -301,45 +301,49 @@ fn attack<C: Component, A: Board, B: Board, S: PlayableState>(
     mut player_state: ResMut<S>,
     mut ev_attacked: EventWriter<AttackedEvent>,
     q_attacking: Query<(Entity, &Attack, &Transform), (With<Attacker>, With<C>)>,
-    q_attacked: Query<&Transform, Without<C>>,
+    q_attacked: Query<&Transform, (Without<AttackTarget>, Without<C>)>,
+    q_target: Query<&Transform, (With<AttackTarget>, Without<Attacker>, Without<C>)>,
 ) {
     for (entity, attack, transform) in q_attacking.iter() {
         let attack = attack.get();
         info!("Attacking with {}", attack);
 
-        if let Some(across) = attacking.across(attacked.state(), entity) {
-            let end = q_attacked.get(across.entity).unwrap().translation;
-            let attack_tween = Tween::new(
-                EaseFunction::QuadraticIn,
-                Duration::from_millis(100),
-                TransformPositionLens {
-                    start: transform.translation,
-                    end,
-                },
-            );
-            let return_tween = Tween::new(
-                EaseFunction::QuadraticOut,
-                Duration::from_millis(250),
-                TransformPositionLens {
-                    start: end,
-                    end: transform.translation,
-                },
-            )
-            .with_completed_event(TWEEN_EVENT_REMOVE_PERFORM_ACTION);
+        let target = if let Some(across) = attacking.across(attacked.state(), entity) {
             info!("Attacking across");
-            commands.entity(entity).insert((
-                Animator::new(attack_tween.then(return_tween)),
-                PerformingAction,
-            ));
             commands.entity(across.entity).insert(Damage(attack));
+
+            q_attacked.get(across.entity).unwrap().translation
         } else {
             info!("Attacking player");
             player_state.take_damage(attack);
             info!("Player health: {}", player_state.get_health());
             ev_attacked.send(S::attacked_event());
-        }
 
-        commands.entity(entity).remove::<Attacker>();
+            q_target.get_single().unwrap().translation
+        };
+
+        let attack_tween = Tween::new(
+            EaseFunction::QuadraticIn,
+            Duration::from_millis(100),
+            TransformPositionLens {
+                start: transform.translation,
+                end: target,
+            },
+        );
+        let return_tween = Tween::new(
+            EaseFunction::QuadraticOut,
+            Duration::from_millis(250),
+            TransformPositionLens {
+                start: target,
+                end: transform.translation,
+            },
+        )
+        .with_completed_event(TWEEN_EVENT_REMOVE_PERFORM_ACTION);
+
+        commands.entity(entity).remove::<Attacker>().insert((
+            Animator::new(attack_tween.then(return_tween)),
+            PerformingAction,
+        ));
     }
 }
 
@@ -873,6 +877,24 @@ fn setup_board(
                 ..default()
             },));
         });
+
+    commands.spawn((
+        TransformBundle {
+            local: Transform::from_xyz(0.0, 3.0, -6.0),
+            ..default()
+        },
+        AttackTarget,
+        Opponent,
+    ));
+
+    commands.spawn((
+        TransformBundle {
+            local: Transform::from_xyz(0.0, 3.0, 6.0),
+            ..default()
+        },
+        AttackTarget,
+        Player,
+    ));
 
     let card_padding = 1.0;
     let y = BOARD_HEIGHT + CARD_HALF_THICKNESS;

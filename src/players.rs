@@ -26,3 +26,6 @@ pub struct Attacker;
 
 #[derive(Component)]
 pub struct PerformingAction;
+
+#[derive(Component)]
+pub struct AttackTarget;
