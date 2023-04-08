@@ -657,8 +657,14 @@ fn play_opponent_cards(
     mut ev_played: EventWriter<CardPlayedEvent>,
     q_placeholder: Query<(&CardPlaceholder, &Transform), With<Opponent>>,
     q_killed: Query<(With<Killed>, With<Opponent>, Without<CardPlaceholder>)>,
+    q_acting: Query<(
+        With<PerformingAction>,
+        With<Opponent>,
+        Without<CardPlaceholder>,
+        Without<Killed>,
+    )>,
 ) {
-    if q_killed.iter().count() > 0 {
+    if q_killed.iter().next().is_some() {
         return;
     }
 
@@ -666,6 +672,15 @@ fn play_opponent_cards(
         let card = opponent_state.play_card().unwrap();
         let index = board.random_empty_place().unwrap();
         let (_, transform) = q_placeholder.iter().find(|(p, _)| p.0 == index).unwrap();
+        let end = transform.translation;
+        let start = end + Vec3::new(0.0, 0.0, -10.0);
+        let transform = transform.with_translation(start);
+        let tween = Tween::new(
+            EaseFunction::QuadraticInOut,
+            Duration::from_millis(300),
+            TransformPositionLens { start, end },
+        )
+        .with_completed_event(TWEEN_EVENT_REMOVE_PERFORM_ACTION);
         let attributes = card.attributes();
         let mesh = card.mesh(&card_assets);
         let material = card.material(&card_assets);
@@ -674,7 +689,7 @@ fn play_opponent_cards(
                 PbrBundle {
                     mesh: card_assets.card_mesh.clone(),
                     material: card_assets.card_material.clone(),
-                    transform: *transform,
+                    transform,
                     ..default()
                 },
                 card,
@@ -682,6 +697,8 @@ fn play_opponent_cards(
                 Health(attributes.health as i32),
                 Opponent,
                 PendingAbility,
+                Animator::new(tween),
+                PerformingAction,
             ))
             .with_children(|parent| {
                 parent.spawn(PbrBundle {
@@ -695,7 +712,7 @@ fn play_opponent_cards(
         board.place(index, entity, card);
         ev_played.send(CardPlayedEvent { entity, index });
         opponent_state.available_power -= attributes.cost as i32;
-    } else {
+    } else if q_acting.iter().next().is_none() {
         state.set(GameState::OpponentPlayCards.next().unwrap());
     }
 }
