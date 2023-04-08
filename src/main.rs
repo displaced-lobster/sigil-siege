@@ -858,6 +858,7 @@ fn setup_board(
     board_assets: Res<BoardAssets>,
     card_assets: Res<CardAssets>,
     placeholder_materials: Res<CardPlaceholderMaterials>,
+    opponent_state: Res<OpponentState>,
     player_state: Res<PlayerState>,
     mut state: ResMut<NextState<GameState>>,
 ) {
@@ -873,7 +874,6 @@ fn setup_board(
         (-BLOCK_SIZE, BLOCK_SIZE),
     ];
     const DIAL_OFFSET: f32 = -7.5;
-    const SIZE: u32 = 12;
     const PLAYER_HEALTH_OFFSET_Z: f32 = HAND_Z - 1.7;
     const PLAYER_HEALTH_WIDTH: f32 = 0.7;
 
@@ -915,7 +915,7 @@ fn setup_board(
             let mut i = 0;
             let mut y = -ATTACK_TARGET_HEIGHT;
 
-            for block_index in 0..SIZE {
+            for block_index in 0..opponent_state.get_health() {
                 if i == BLOCK_POSITIONS.len() {
                     i = 0;
                     y += BLOCK_SIZE;
@@ -932,7 +932,7 @@ fn setup_board(
                             .with_rotation(Quat::from_rotation_y(rotation.to_radians())),
                         ..default()
                     },
-                    PlayerHealth(block_index),
+                    PlayerHealth(block_index as u32),
                     Opponent,
                 ));
 
@@ -949,7 +949,7 @@ fn setup_board(
         Player,
     ));
 
-    for i in 0..SIZE {
+    for i in 0..player_state.get_health() {
         let x = i as f32 * PLAYER_HEALTH_WIDTH - 5.5;
 
         commands.spawn((
@@ -959,7 +959,7 @@ fn setup_board(
                 transform: Transform::from_xyz(x, 0.0, PLAYER_HEALTH_OFFSET_Z),
                 ..default()
             },
-            PlayerHealth(i),
+            PlayerHealth(i as u32),
             Player,
         ));
     }
