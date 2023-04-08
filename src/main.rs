@@ -53,6 +53,7 @@ fn main() {
         .add_state::<GameState>()
         .add_event::<AttackedEvent>()
         .add_event::<CardPlayedEvent>()
+        .insert_resource(Msaa::Sample4)
         .add_plugins(DefaultPlugins)
         .add_plugin(PickingPlugin)
         .add_plugin(InteractablePickingPlugin)
