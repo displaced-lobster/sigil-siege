@@ -34,7 +34,7 @@ use hand::*;
 use players::*;
 use states::*;
 
-const HAND_Z: f32 = 6.0;
+const HAND_Z: f32 = 6.5;
 const TWEEN_EVENT_REMOVE_PERFORM_ACTION: u64 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, SystemSet)]
@@ -874,6 +874,8 @@ fn setup_board(
     ];
     const DIAL_OFFSET: f32 = -7.5;
     const SIZE: u32 = 12;
+    const PLAYER_HEALTH_OFFSET_Z: f32 = HAND_Z - 1.7;
+    const PLAYER_HEALTH_WIDTH: f32 = 0.7;
 
     commands.spawn(PbrBundle {
         mesh: board_assets.mesh.clone(),
@@ -930,7 +932,7 @@ fn setup_board(
                             .with_rotation(Quat::from_rotation_y(rotation.to_radians())),
                         ..default()
                     },
-                    Block(block_index),
+                    PlayerHealth(block_index),
                     Opponent,
                 ));
 
@@ -946,6 +948,21 @@ fn setup_board(
         AttackTarget,
         Player,
     ));
+
+    for i in 0..SIZE {
+        let x = i as f32 * PLAYER_HEALTH_WIDTH - 5.5;
+
+        commands.spawn((
+            PbrBundle {
+                mesh: card_assets.heart_mesh.clone(),
+                material: card_assets.heart_material.clone(),
+                transform: Transform::from_xyz(x, 0.0, PLAYER_HEALTH_OFFSET_Z),
+                ..default()
+            },
+            PlayerHealth(i),
+            Player,
+        ));
+    }
 
     let card_padding = 1.0;
     let y = BOARD_HEIGHT + CARD_HALF_THICKNESS;
@@ -1055,9 +1072,11 @@ fn spend_power(
 fn update_player_health(
     mut commands: Commands,
     mut ev_attacked: EventReader<AttackedEvent>,
-    q_block: Query<(Entity, &Block), With<Opponent>>,
+    q_block: Query<(Entity, &PlayerHealth), With<Opponent>>,
+    q_hearts: Query<(Entity, &PlayerHealth), (With<Player>, Without<Opponent>)>,
 ) {
     let mut blocks = None;
+    let mut hearts = None;
 
     for ev in ev_attacked.iter() {
         match ev {
@@ -1077,7 +1096,22 @@ fn update_player_health(
                     }
                 }
             }
-            _ => {}
+            AttackedEvent::Player(damage) => {
+                if hearts.is_none() {
+                    let mut hearts_vec = q_hearts.iter().collect::<Vec<_>>();
+
+                    hearts_vec.sort_by(|a, b| a.1 .0.partial_cmp(&b.1 .0).unwrap());
+                    hearts = Some(hearts_vec);
+                }
+
+                if let Some(hearts) = hearts.as_mut() {
+                    for _ in 0..*damage {
+                        if let Some((entity, _)) = hearts.pop() {
+                            commands.entity(entity).despawn_recursive();
+                        }
+                    }
+                }
+            }
         }
     }
 }

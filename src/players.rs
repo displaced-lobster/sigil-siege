@@ -31,4 +31,4 @@ pub struct PerformingAction;
 pub struct AttackTarget;
 
 #[derive(Component)]
-pub struct Block(pub u32);
+pub struct PlayerHealth(pub u32);
