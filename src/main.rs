@@ -9,6 +9,8 @@ use bevy_mod_picking::{
     PickingPlugin,
     SelectionEvent,
 };
+use bevy_tweening::{lens::TransformPositionLens, Animator, EaseFunction, Tween, TweeningPlugin};
+use std::time::Duration;
 
 mod board;
 mod cards;
@@ -40,6 +42,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(PickingPlugin)
         .add_plugin(InteractablePickingPlugin)
+        .add_plugin(TweeningPlugin)
         .add_plugin(
             WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
         )
@@ -90,7 +93,8 @@ fn main() {
         .add_system(reset_dial.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(reset_hand.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(
-            reset_power::<Opponent, OpponentState>.in_schedule(OnEnter(GameState::OpponentPlayCards)),
+            reset_power::<Opponent, OpponentState>
+                .in_schedule(OnEnter(GameState::OpponentPlayCards)),
         )
         .add_system(reset_power::<Player, PlayerState>.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(
@@ -360,7 +364,18 @@ fn draw_cards(
 
     for (entity, mut transform) in q_draw.iter_mut() {
         if let Some(card_type) = player_state.draw_card() {
-            *transform = Transform::from_xyz(x, CARD_HALF_THICKNESS, HAND_Z);
+            *transform = transform.with_rotation(Quat::from_rotation_z(0.0));
+
+            let end = Vec3::new(x, CARD_HALF_THICKNESS, HAND_Z);
+            let tween = Tween::new(
+                EaseFunction::QuadraticInOut,
+                Duration::from_millis(250),
+                TransformPositionLens {
+                    start: transform.translation,
+                    end,
+                },
+            );
+
             x += CARD_WIDTH;
 
             let mesh = card_type.mesh(&card_assets);
@@ -384,6 +399,7 @@ fn draw_cards(
                     Attack(attributes.attack as i32),
                     Cost(attributes.cost as i32),
                     Health(attributes.health as i32),
+                    Animator::new(tween),
                 ))
                 .insert(PickableBundle::default())
                 .push_children(&[child]);
