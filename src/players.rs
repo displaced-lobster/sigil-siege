@@ -20,3 +20,9 @@ pub enum AttackedEvent {
 
 #[derive(Component)]
 pub struct Killed;
+
+#[derive(Component)]
+pub struct Attacker;
+
+#[derive(Component)]
+pub struct PerformingAction;

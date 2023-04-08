@@ -9,7 +9,14 @@ use bevy_mod_picking::{
     PickingPlugin,
     SelectionEvent,
 };
-use bevy_tweening::{lens::TransformPositionLens, Animator, EaseFunction, Tween, TweeningPlugin};
+use bevy_tweening::{
+    lens::TransformPositionLens,
+    Animator,
+    EaseFunction,
+    Tween,
+    TweenCompleted,
+    TweeningPlugin,
+};
 use std::time::Duration;
 
 mod board;
@@ -27,6 +34,7 @@ use players::*;
 use states::*;
 
 const HAND_Z: f32 = 6.0;
+const TWEEN_EVENT_REMOVE_PERFORM_ACTION: u64 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, SystemSet)]
 enum PlayCardSystemSet {
@@ -56,13 +64,15 @@ fn main() {
         .add_system(apply_damage.in_schedule(OnExit(GameState::OpponentAttacking)))
         .add_system(apply_damage.in_schedule(OnExit(GameState::PlayerAttacking)))
         .add_system(
-            attack::<OpponentBoard, PlayerBoard, PlayerState>
+            attack::<Opponent, OpponentBoard, PlayerBoard, PlayerState>
                 .in_set(OnUpdate(GameState::OpponentAttacking)),
         )
         .add_system(
-            attack::<PlayerBoard, OpponentBoard, OpponentState>
+            attack::<Player, PlayerBoard, OpponentBoard, OpponentState>
                 .in_set(OnUpdate(GameState::PlayerAttacking)),
         )
+        .add_system(attack_finished::<Opponent>.in_set(OnUpdate(GameState::OpponentAttacking)))
+        .add_system(attack_finished::<Player>.in_set(OnUpdate(GameState::PlayerAttacking)))
         .add_system(check_lose_condition.run_if(resource_exists::<PlayerState>()))
         .add_system(check_win_condition.run_if(resource_exists::<OpponentState>()))
         .add_system(cleanup_system)
@@ -73,6 +83,10 @@ fn main() {
         .add_system(hover_card_placeholder.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_dial.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_hand.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(
+            mark_attackers::<OpponentBoard>.in_schedule(OnEnter(GameState::OpponentAttacking)),
+        )
+        .add_system(mark_attackers::<PlayerBoard>.in_schedule(OnEnter(GameState::PlayerAttacking)))
         .add_system(mark_cards_to_draw.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(pick_from_hand.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(
@@ -90,6 +104,7 @@ fn main() {
             remove_killed::<Opponent, OpponentBoard>.run_if(resource_exists::<OpponentBoard>()),
         )
         .add_system(remove_killed::<Player, PlayerBoard>.run_if(resource_exists::<PlayerBoard>()))
+        .add_system(remove_perform_action)
         .add_system(reset_dial.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(reset_hand.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(
@@ -279,28 +294,43 @@ fn apply_damage(mut commands: Commands, mut q_damage: Query<(Entity, &Damage, &m
     }
 }
 
-fn attack<A: Board, B: Board, S: PlayableState>(
+fn attack<C: Component, A: Board, B: Board, S: PlayableState>(
     mut commands: Commands,
-    current_state: Res<State<GameState>>,
-    mut state: ResMut<NextState<GameState>>,
     attacking: Res<A>,
     attacked: Res<B>,
     mut player_state: ResMut<S>,
     mut ev_attacked: EventWriter<AttackedEvent>,
-    q_card: Query<&Attack>,
+    q_attacking: Query<(Entity, &Attack, &Transform), (With<Attacker>, With<C>)>,
+    q_attacked: Query<&Transform, Without<C>>,
 ) {
-    for placement in attacking.all() {
-        let attack = if let Ok(attack) = q_card.get(placement.entity) {
-            attack.get()
-        } else {
-            info!("No attack component found");
-            continue;
-        };
-
+    for (entity, attack, transform) in q_attacking.iter() {
+        let attack = attack.get();
         info!("Attacking with {}", attack);
 
-        if let Some(across) = attacking.across(attacked.state(), placement.entity) {
+        if let Some(across) = attacking.across(attacked.state(), entity) {
+            let end = q_attacked.get(across.entity).unwrap().translation;
+            let attack_tween = Tween::new(
+                EaseFunction::QuadraticIn,
+                Duration::from_millis(100),
+                TransformPositionLens {
+                    start: transform.translation,
+                    end,
+                },
+            );
+            let return_tween = Tween::new(
+                EaseFunction::QuadraticOut,
+                Duration::from_millis(250),
+                TransformPositionLens {
+                    start: end,
+                    end: transform.translation,
+                },
+            )
+            .with_completed_event(TWEEN_EVENT_REMOVE_PERFORM_ACTION);
             info!("Attacking across");
+            commands.entity(entity).insert((
+                Animator::new(attack_tween.then(return_tween)),
+                PerformingAction,
+            ));
             commands.entity(across.entity).insert(Damage(attack));
         } else {
             info!("Attacking player");
@@ -308,10 +338,21 @@ fn attack<A: Board, B: Board, S: PlayableState>(
             info!("Player health: {}", player_state.get_health());
             ev_attacked.send(S::attacked_event());
         }
-    }
 
-    let next_state = current_state.0.next().unwrap();
-    state.set(next_state);
+        commands.entity(entity).remove::<Attacker>();
+    }
+}
+
+fn attack_finished<C: Component>(
+    current_state: Res<State<GameState>>,
+    mut state: ResMut<NextState<GameState>>,
+    q_attacker: Query<(With<Attacker>, With<C>)>,
+    q_perform_action: Query<(With<PerformingAction>, With<C>)>,
+) {
+    if q_attacker.iter().next().is_none() && q_perform_action.iter().next().is_none() {
+        let next_state = current_state.0.next().unwrap();
+        state.set(next_state);
+    }
 }
 
 fn check_lose_condition(
@@ -509,6 +550,12 @@ fn end_turn_opponent(mut state: ResMut<NextState<GameState>>) {
     state.set(GameState::OpponentAttacking);
 }
 
+fn mark_attackers<B: Board>(mut commands: Commands, board: Res<B>) {
+    for placement in board.all() {
+        commands.entity(placement.entity).insert(Attacker);
+    }
+}
+
 fn mark_cards_to_draw(
     mut commands: Commands,
     mut player_state: ResMut<PlayerState>,
@@ -700,6 +747,14 @@ fn remove_killed<C: Component, B: Board>(
 
         board.remove(entity);
         commands.entity(entity).despawn_recursive();
+    }
+}
+
+fn remove_perform_action(mut commands: Commands, mut ev_completed: EventReader<TweenCompleted>) {
+    for ev in ev_completed.iter() {
+        if ev.user_data == TWEEN_EVENT_REMOVE_PERFORM_ACTION {
+            commands.entity(ev.entity).remove::<PerformingAction>();
+        }
     }
 }
 
