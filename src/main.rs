@@ -24,6 +24,7 @@ mod board;
 mod cards;
 mod deck;
 mod hand;
+mod menu;
 mod players;
 mod states;
 
@@ -31,11 +32,15 @@ use board::*;
 use cards::*;
 use deck::*;
 use hand::*;
+use menu::*;
 use players::*;
 use states::*;
 
+const ATTACK_TARGET_HEIGHT: f32 = 1.0;
+const CAMERA_MENU_OFFSET: Vec3 = Vec3::new(0.0, 9.0, 1.0);
 const HAND_Z: f32 = 6.5;
 const TWEEN_EVENT_REMOVE_PERFORM_ACTION: u64 = 1;
+const TWEEN_EVENT_CAMERA_MOVE_TO_BOARD: u64 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, SystemSet)]
 enum PlayCardSystemSet {
@@ -57,7 +62,6 @@ fn main() {
         )
         .insert_resource(ClearColor(Color::rgb(0.06, 0.06, 0.08)))
         .add_startup_system(setup)
-        .add_system(setup_board.in_set(OnUpdate(GameState::Setup)))
         .add_system(
             apply_ability::<Opponent, OpponentBoard>.in_set(OnUpdate(GameState::OpponentPlayCards)),
         )
@@ -77,10 +81,13 @@ fn main() {
         .add_system(check_lose_condition.run_if(resource_exists::<PlayerState>()))
         .add_system(check_win_condition.run_if(resource_exists::<OpponentState>()))
         .add_system(cleanup_system)
+        .add_system(click_config_button)
+        .add_system(click_play_button)
         .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(draw_opponent_cards.in_schedule(OnEnter(GameState::OpponentPlayCards)))
         .add_system(end_turn.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(end_turn_opponent.in_set(OnUpdate(GameState::OpponentTurn)))
+        .add_system(hover_button)
         .add_system(hover_card_placeholder.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_dial.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_hand.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -98,7 +105,8 @@ fn main() {
         )
         .add_system(play_opponent_cards.in_set(OnUpdate(GameState::OpponentPlayCards)))
         .add_system(
-            receive_ability::<Opponent, OpponentBoard>.in_set(OnUpdate(GameState::OpponentPlayCards)),
+            receive_ability::<Opponent, OpponentBoard>
+                .in_set(OnUpdate(GameState::OpponentPlayCards)),
         )
         .add_system(receive_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(
@@ -113,6 +121,7 @@ fn main() {
                 .in_schedule(OnEnter(GameState::OpponentPlayCards)),
         )
         .add_system(reset_power::<Player, PlayerState>.in_schedule(OnEnter(GameState::PlayerTurn)))
+        .add_system(setup_game.in_set(OnUpdate(GameState::StartGame)))
         .add_system(
             slide_hand
                 .in_set(PlayCardSystemSet::CardPlayed)
@@ -161,14 +170,8 @@ fn setup(
         ..default()
     });
     commands.insert_resource(BoardAssets {
-        arrow_material,
-        arrow_mesh,
         block_material,
         block_mesh,
-        dial_material,
-        dial_mesh,
-        material,
-        mesh,
     });
 
     let invisable_material = materials.add(StandardMaterial {
@@ -185,7 +188,7 @@ fn setup(
     });
 
     commands.insert_resource(CardPlaceholderMaterials {
-        invisable: invisable_material,
+        invisable: invisable_material.clone(),
         hovered: hovered_material,
     });
 
@@ -232,7 +235,7 @@ fn setup(
     });
 
     commands.insert_resource(CardAssets {
-        card_mesh,
+        card_mesh: card_mesh.clone(),
         card_material,
         heart_mesh,
         heart_material,
@@ -246,9 +249,101 @@ fn setup(
     });
     commands.insert_resource(OpponentState::default().with_deck_size(20).with_health(20));
     commands.insert_resource(PlayerState::default());
+
+    let menu_translation = Vec3::new(50.0, 0.0, 50.0);
+    let button_material = materials.add(StandardMaterial {
+        base_color: Color::rgb(0.45, 0.11, 0.15),
+        unlit: true,
+        ..default()
+    });
+    let button_material_active = materials.add(StandardMaterial {
+        base_color: Color::rgb(0.11, 0.45, 0.15),
+        unlit: true,
+        ..default()
+    });
+
+    commands
+        .spawn((
+            Menu,
+            SpatialBundle {
+                transform: Transform::from_translation(menu_translation),
+                ..default()
+            },
+        ))
+        .with_children(|parent| {
+            parent.spawn(PbrBundle {
+                mesh: asset_server.load("models/sigil-siege-text.glb#Mesh0/Primitive0"),
+                material: materials.add(StandardMaterial {
+                    base_color: Color::WHITE,
+                    base_color_texture: Some(asset_server.load("textures/text-base-color.png")),
+                    perceptual_roughness: 1.0,
+                    unlit: true,
+                    ..default()
+                }),
+                ..default()
+            });
+
+            parent.spawn((
+                MenuSelection::Small,
+                ActiveSelection,
+                Button,
+                PickableBundle::default(),
+                PbrBundle {
+                    mesh: asset_server.load("models/small-btn.glb#Mesh0/Primitive0"),
+                    material: button_material_active.clone(),
+                    ..default()
+                },
+            ));
+
+            parent.spawn((
+                MenuSelection::Medium,
+                Button,
+                PickableBundle::default(),
+                PbrBundle {
+                    mesh: asset_server.load("models/medium-btn.glb#Mesh0/Primitive0"),
+                    material: button_material.clone(),
+                    ..default()
+                },
+            ));
+
+            parent.spawn((
+                MenuSelection::Large,
+                Button,
+                PickableBundle::default(),
+                PbrBundle {
+                    mesh: asset_server.load("models/large-btn.glb#Mesh0/Primitive0"),
+                    material: button_material.clone(),
+                    ..default()
+                },
+            ));
+
+            parent.spawn((
+                PlayButton,
+                Button,
+                PickableBundle::default(),
+                PbrBundle {
+                    mesh: asset_server.load("models/play-btn.glb#Mesh0/Primitive0"),
+                    material: button_material.clone(),
+                    ..default()
+                },
+            ));
+        });
+
+    commands.insert_resource(MenuMaterials {
+        button_material,
+        button_material_active,
+        button_material_hovered: materials.add(StandardMaterial {
+            base_color: Color::rgb(0.45, 0.45, 0.15),
+            unlit: true,
+            ..default()
+        }),
+    });
+
     commands.spawn((
         Camera3dBundle {
-            transform: Transform::from_xyz(0.0, 9.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
+            // transform: Transform::from_xyz(0.0, 9.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
+            transform: Transform::from_translation(menu_translation + CAMERA_MENU_OFFSET)
+                .looking_at(menu_translation, Vec3::Y),
             ..default()
         },
         PickingCameraBundle::default(),
@@ -266,6 +361,67 @@ fn setup(
         transform: Transform::from_xyz(0.0, 9.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..default()
     });
+
+    const DIAL_OFFSET: f32 = -7.5;
+
+    commands.spawn(PbrBundle {
+        mesh,
+        material,
+        ..default()
+    });
+    commands
+        .spawn((
+            PbrBundle {
+                mesh: dial_mesh,
+                material: dial_material,
+                transform: Transform::from_xyz(DIAL_OFFSET, 0.0, 0.0),
+                ..default()
+            },
+            TurnDial,
+            PickableBundle::default(),
+        ))
+        .with_children(|parent| {
+            parent.spawn((PbrBundle {
+                mesh: arrow_mesh.clone(),
+                material: arrow_material.clone(),
+                ..default()
+            },));
+        });
+
+    let card_padding = 1.0;
+    let y = BOARD_HEIGHT + CARD_HALF_THICKNESS;
+    let z_start = 2.0;
+
+    for z in 0..2 {
+        for x in 0..4 {
+            let index = x as u32;
+            let z = z_start - z as f32 * (CARD_HEIGHT + card_padding);
+            let x = x as f32 * (CARD_WIDTH + card_padding) - 4.5;
+
+            if z == z_start {
+                commands.spawn((
+                    PbrBundle {
+                        mesh: card_mesh.clone(),
+                        material: invisable_material.clone(),
+                        transform: Transform::from_xyz(x, y, z),
+                        ..default()
+                    },
+                    CardPlaceholder(index),
+                    Player,
+                    PickableBundle::default(),
+                ));
+            } else {
+                commands.spawn((
+                    TransformBundle {
+                        local: Transform::from_xyz(x, y, z),
+                        ..default()
+                    },
+                    CardPlaceholder(index),
+                    Opponent,
+                ));
+            }
+        }
+    }
 }
 
 fn apply_ability<C: Component, B: Board>(
@@ -406,6 +562,76 @@ fn cleanup_system(mut commands: Commands, mut q_cleanup: Query<(Entity, &CleanUp
     }
 }
 
+fn click_config_button(
+    mut commands: Commands,
+    materials: Res<MenuMaterials>,
+    mut ev_pick: EventReader<PickingEvent>,
+    mut q_active: Query<(Entity, &mut Handle<StandardMaterial>), With<ActiveSelection>>,
+    mut q_config: Query<
+        (Entity, &mut Handle<StandardMaterial>),
+        (With<MenuSelection>, Without<ActiveSelection>),
+    >,
+) {
+    for ev in ev_pick.iter() {
+        if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
+            if let Ok((entity, mut material)) = q_config.get_mut(*e) {
+                for (entity, mut material) in q_active.iter_mut() {
+                    *material = materials.button_material.clone();
+                    commands.entity(entity).remove::<ActiveSelection>();
+                }
+
+                *material = materials.button_material_active.clone();
+                commands.entity(entity).insert(ActiveSelection);
+            }
+        }
+    }
+}
+
+fn click_play_button(
+    mut commands: Commands,
+    mut ev_pick: EventReader<PickingEvent>,
+    mut state: ResMut<NextState<GameState>>,
+    q_play_btn: Query<With<PlayButton>>,
+    mut q_camera: Query<(Entity, &mut Transform), With<Camera>>,
+    q_selection: Query<&MenuSelection, With<ActiveSelection>>,
+) {
+    const CAMERA_BOARD_OFFSET: Vec3 = Vec3::new(0.0, 9.0, 15.0);
+
+    for ev in ev_pick.iter() {
+        if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
+            if q_play_btn.get(*e).is_ok() {
+                let config = q_selection.single().game_config();
+
+                commands.insert_resource(PlayerState::default().with_deck_size(config.deck_size));
+                commands.insert_resource(
+                    OpponentState::default()
+                        .with_deck_size(config.deck_size)
+                        .with_health(config.opponent_hp as i32),
+                );
+
+                let (camera, mut transform) = q_camera.single_mut();
+                let end_transform = Transform::from_translation(CAMERA_BOARD_OFFSET)
+                    .looking_at(Vec3::ZERO, Vec3::Y);
+
+                *transform = transform.with_rotation(end_transform.rotation);
+
+                let tween = Tween::new(
+                    EaseFunction::QuadraticOut,
+                    Duration::from_secs(1),
+                    TransformPositionLens {
+                        start: transform.translation,
+                        end: CAMERA_BOARD_OFFSET,
+                    },
+                )
+                .with_completed_event(TWEEN_EVENT_CAMERA_MOVE_TO_BOARD);
+
+                commands.entity(camera).insert(Animator::new(tween));
+                state.set(GameState::StartGame);
+            }
+        }
+    }
+}
+
 fn draw_cards(
     mut commands: Commands,
     card_assets: Res<CardAssets>,
@@ -466,6 +692,35 @@ fn draw_cards(
 fn draw_opponent_cards(mut opponent_state: ResMut<OpponentState>) {
     opponent_state.draw_cards();
     opponent_state.turn += 1;
+}
+
+fn hover_button(
+    materials: Res<MenuMaterials>,
+    mut ev_pick: EventReader<PickingEvent>,
+    mut q_button: Query<
+        (&mut Handle<StandardMaterial>, Option<&ActiveSelection>),
+        (With<Button>, Without<ActiveSelection>),
+    >,
+) {
+    for ev in ev_pick.iter() {
+        match ev {
+            PickingEvent::Hover(HoverEvent::JustEntered(e)) => {
+                if let Ok((mut material, _)) = q_button.get_mut(*e) {
+                    *material = materials.button_material_hovered.clone();
+                }
+            }
+            PickingEvent::Hover(HoverEvent::JustLeft(e)) => {
+                if let Ok((mut material, active)) = q_button.get_mut(*e) {
+                    if active.is_some() {
+                        *material = materials.button_material_active.clone();
+                    } else {
+                        *material = materials.button_material.clone();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn hover_card_placeholder(
@@ -853,16 +1108,14 @@ fn reset_power<C: Component + Default, P: PlayableState>(
     }
 }
 
-fn setup_board(
+fn setup_game(
     mut commands: Commands,
     board_assets: Res<BoardAssets>,
     card_assets: Res<CardAssets>,
-    placeholder_materials: Res<CardPlaceholderMaterials>,
     opponent_state: Res<OpponentState>,
     player_state: Res<PlayerState>,
     mut state: ResMut<NextState<GameState>>,
 ) {
-    const ATTACK_TARGET_HEIGHT: f32 = 1.0;
     const BLOCK_POSITIONS: [(f32, f32); 8] = [
         (0.0, BLOCK_SIZE),
         (BLOCK_SIZE, BLOCK_SIZE),
@@ -873,33 +1126,9 @@ fn setup_board(
         (-BLOCK_SIZE, 0.0),
         (-BLOCK_SIZE, BLOCK_SIZE),
     ];
-    const DIAL_OFFSET: f32 = -7.5;
+
     const PLAYER_HEALTH_OFFSET_Z: f32 = HAND_Z - 1.7;
     const PLAYER_HEALTH_WIDTH: f32 = 0.7;
-
-    commands.spawn(PbrBundle {
-        mesh: board_assets.mesh.clone(),
-        material: board_assets.material.clone(),
-        ..default()
-    });
-    commands
-        .spawn((
-            PbrBundle {
-                mesh: board_assets.dial_mesh.clone(),
-                material: board_assets.dial_material.clone(),
-                transform: Transform::from_xyz(DIAL_OFFSET, 0.0, 0.0),
-                ..default()
-            },
-            TurnDial,
-            PickableBundle::default(),
-        ))
-        .with_children(|parent| {
-            parent.spawn((PbrBundle {
-                mesh: board_assets.arrow_mesh.clone(),
-                material: board_assets.arrow_material.clone(),
-                ..default()
-            },));
-        });
 
     commands
         .spawn((
@@ -962,41 +1191,6 @@ fn setup_board(
             PlayerHealth(i as u32),
             Player,
         ));
-    }
-
-    let card_padding = 1.0;
-    let y = BOARD_HEIGHT + CARD_HALF_THICKNESS;
-    let z_start = 2.0;
-
-    for z in 0..2 {
-        for x in 0..4 {
-            let index = x as u32;
-            let z = z_start - z as f32 * (CARD_HEIGHT + card_padding);
-            let x = x as f32 * (CARD_WIDTH + card_padding) - 4.5;
-
-            if z == z_start {
-                commands.spawn((
-                    PbrBundle {
-                        mesh: card_assets.card_mesh.clone(),
-                        material: placeholder_materials.invisable.clone(),
-                        transform: Transform::from_xyz(x, y, z),
-                        ..default()
-                    },
-                    CardPlaceholder(index),
-                    Player,
-                    PickableBundle::default(),
-                ));
-            } else {
-                commands.spawn((
-                    TransformBundle {
-                        local: Transform::from_xyz(x, y, z),
-                        ..default()
-                    },
-                    CardPlaceholder(index),
-                    Opponent,
-                ));
-            }
-        }
     }
 
     for i in 0..player_state.deck_size() {

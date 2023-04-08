@@ -126,14 +126,8 @@ impl BoardState {
 
 #[derive(Resource)]
 pub struct BoardAssets {
-    pub arrow_material: Handle<StandardMaterial>,
-    pub arrow_mesh: Handle<Mesh>,
     pub block_material: Handle<StandardMaterial>,
     pub block_mesh: Handle<Mesh>,
-    pub dial_material: Handle<StandardMaterial>,
-    pub dial_mesh: Handle<Mesh>,
-    pub material: Handle<StandardMaterial>,
-    pub mesh: Handle<Mesh>,
 }
 
 #[derive(Clone, Copy)]

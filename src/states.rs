@@ -4,6 +4,7 @@ use bevy::prelude::States;
 pub enum GameState {
     #[default]
     Setup,
+    StartGame,
     PlayerTurn,
     PlayerAttacking,
     OpponentPlayCards,
@@ -16,7 +17,8 @@ pub enum GameState {
 impl GameState {
     pub fn next(&self) -> Option<Self> {
         match self {
-            Self::Setup => Some(Self::PlayerTurn),
+            Self::Setup => Some(Self::StartGame),
+            Self::StartGame => Some(Self::PlayerTurn),
             Self::PlayerTurn => Some(Self::PlayerAttacking),
             Self::PlayerAttacking => Some(Self::OpponentPlayCards),
             Self::OpponentPlayCards => Some(Self::OpponentTurn),
