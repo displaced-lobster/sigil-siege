@@ -244,7 +244,7 @@ fn setup(
         tower_mesh,
         black_material,
     });
-    commands.insert_resource(OpponentState::default());
+    commands.insert_resource(OpponentState::default().with_deck_size(20).with_health(20));
     commands.insert_resource(PlayerState::default());
     commands.spawn((
         Camera3dBundle {

@@ -152,6 +152,16 @@ impl PlayableState for OpponentState {
     fn take_damage(&mut self, damage: i32) {
         self.health -= damage;
     }
+
+    fn with_deck_size(mut self, size: u32) -> Self {
+        self.deck_state = DeckState::new(size);
+        self
+    }
+
+    fn with_health(mut self, health: i32) -> Self {
+        self.health = health;
+        self
+    }
 }
 
 pub trait PlayableState: Resource {
@@ -169,6 +179,8 @@ pub trait PlayableState: Resource {
         false
     }
     fn take_damage(&mut self, damage: i32);
+    fn with_deck_size(self, size: u32) -> Self;
+    fn with_health(self, health: i32) -> Self;
 }
 
 #[derive(Resource)]
@@ -231,6 +243,16 @@ impl PlayableState for PlayerState {
 
     fn take_damage(&mut self, damage: i32) {
         self.health -= damage;
+    }
+
+    fn with_deck_size(mut self, size: u32) -> Self {
+        self.deck_state = DeckState::new(size);
+        self
+    }
+
+    fn with_health(mut self, health: i32) -> Self {
+        self.health = health;
+        self
     }
 }
 
