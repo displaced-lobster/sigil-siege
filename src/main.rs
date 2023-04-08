@@ -59,7 +59,7 @@ fn main() {
         .add_startup_system(setup)
         .add_system(setup_board.in_set(OnUpdate(GameState::Setup)))
         .add_system(
-            apply_ability::<Opponent, OpponentBoard>.run_if(resource_exists::<OpponentBoard>()),
+            apply_ability::<Opponent, OpponentBoard>.in_set(OnUpdate(GameState::OpponentPlayCards)),
         )
         .add_system(apply_ability::<Player, PlayerBoard>.run_if(resource_exists::<PlayerBoard>()))
         .add_system(apply_damage.in_schedule(OnExit(GameState::OpponentAttacking)))
@@ -98,7 +98,7 @@ fn main() {
         )
         .add_system(play_opponent_cards.in_set(OnUpdate(GameState::OpponentPlayCards)))
         .add_system(
-            receive_ability::<Opponent, OpponentBoard>.run_if(resource_exists::<OpponentBoard>()),
+            receive_ability::<Opponent, OpponentBoard>.in_set(OnUpdate(GameState::OpponentPlayCards)),
         )
         .add_system(receive_ability::<Player, PlayerBoard>.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(
@@ -734,7 +734,7 @@ fn receive_ability<C: Component, B: Board>(
     mut commands: Commands,
     board: Res<B>,
     mut ev_played: EventReader<CardPlayedEvent>,
-    mut q_pending: Query<(&mut Attack, &mut Health), With<PendingAbility>>,
+    mut q_pending: Query<(&mut Attack, &mut Health), (With<C>, With<PendingAbility>)>,
     q_cards: Query<(Entity, &CardType), (With<C>, Without<Hand>, Without<PendingAbility>)>,
 ) {
     for ev in ev_played.iter() {
