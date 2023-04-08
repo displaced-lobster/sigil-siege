@@ -14,6 +14,31 @@ struct DeckState {
 }
 
 impl DeckState {
+    fn new(size: u32) -> Self {
+        let mut rng = rand::thread_rng();
+        let mut cards = Vec::new();
+
+        for _ in 0..size {
+            let n = rng.gen_range(0..12);
+
+            match n {
+                0 | 1 | 2 => {
+                    cards.push(CardType::Heart);
+                }
+                3 | 4 => {
+                    cards.push(CardType::Sword);
+                }
+                5 | 6 => {
+                    cards.push(CardType::Tower);
+                }
+                _ => {
+                    cards.push(CardType::Pitchfork);
+                }
+            }
+        }
+
+        Self { cards }
+    }
     fn draw(&mut self) -> Option<CardType> {
         if self.cards.is_empty() {
             return None;
@@ -27,34 +52,6 @@ impl DeckState {
 
     fn size(&self) -> u32 {
         self.cards.len() as u32
-    }
-}
-
-impl Default for DeckState {
-    fn default() -> Self {
-        let heart_count = 2;
-        let sword_count = 2;
-        let tower_count = 2;
-        let pitchfork_count = 6;
-        let mut cards = Vec::new();
-
-        for _ in 0..heart_count {
-            cards.push(CardType::Heart);
-        }
-
-        for _ in 0..sword_count {
-            cards.push(CardType::Sword);
-        }
-
-        for _ in 0..tower_count {
-            cards.push(CardType::Tower);
-        }
-
-        for _ in 0..pitchfork_count {
-            cards.push(CardType::Pitchfork);
-        }
-
-        Self { cards }
     }
 }
 
@@ -98,7 +95,7 @@ impl Default for OpponentState {
     fn default() -> Self {
         Self {
             available_power: 0,
-            deck_state: DeckState::default(),
+            deck_state: DeckState::new(12),
             hand: Vec::new(),
             health: 12,
             max_hand_size: 5,
@@ -241,8 +238,8 @@ impl Default for PlayerState {
     fn default() -> Self {
         Self {
             available_power: 0,
-            deck_state: DeckState::default(),
-            health: 12,
+            deck_state: DeckState::new(12),
+            health: 10,
             max_hand_size: 5,
             max_power: 5,
             power: 0,
