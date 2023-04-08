@@ -4,6 +4,7 @@ use rand::Rng;
 use crate::cards::CardType;
 
 pub const BOARD_HEIGHT: f32 = 0.25;
+pub const BLOCK_SIZE: f32 = 1.0;
 
 pub trait Board: Resource {
     fn across(&self, other: &BoardState, entity: Entity) -> Option<BoardPlacement> {
@@ -127,6 +128,8 @@ impl BoardState {
 pub struct BoardAssets {
     pub arrow_material: Handle<StandardMaterial>,
     pub arrow_mesh: Handle<Mesh>,
+    pub block_material: Handle<StandardMaterial>,
+    pub block_mesh: Handle<Mesh>,
     pub dial_material: Handle<StandardMaterial>,
     pub dial_mesh: Handle<Mesh>,
     pub material: Handle<StandardMaterial>,

@@ -17,6 +17,7 @@ use bevy_tweening::{
     TweenCompleted,
     TweeningPlugin,
 };
+use rand::Rng;
 use std::time::Duration;
 
 mod board;
@@ -118,6 +119,7 @@ fn main() {
                 .in_set(OnUpdate(GameState::PlayerTurn)),
         )
         .add_system(spend_power.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(update_player_health)
         .add_system(update_sigils::<Attack, AttackSigil>)
         .add_system(update_sigils::<Cost, CostSigil>)
         .add_system(update_sigils::<Health, HealthSigil>)
@@ -132,6 +134,15 @@ fn setup(
     let arrow_mesh = asset_server.load("models/arrow.glb#Mesh0/Primitive0");
     let arrow_material = materials.add(StandardMaterial {
         base_color: Color::rgb(0.45, 0.11, 0.15),
+        ..default()
+    });
+    let block_mesh = asset_server.load("models/block.glb#Mesh0/Primitive0");
+    let block_material = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        base_color_texture: Some(asset_server.load("textures/stone-base-color.png")),
+        perceptual_roughness: 1.0,
+        normal_map_texture: Some(asset_server.load("textures/stone-normal.png")),
+        reflectance: 0.0,
         ..default()
     });
     let dial_mesh = asset_server.load("models/dial.glb#Mesh0/Primitive0");
@@ -152,6 +163,8 @@ fn setup(
     commands.insert_resource(BoardAssets {
         arrow_material,
         arrow_mesh,
+        block_material,
+        block_mesh,
         dial_material,
         dial_mesh,
         material,
@@ -317,7 +330,7 @@ fn attack<C: Component, A: Board, B: Board, S: PlayableState>(
             info!("Attacking player");
             player_state.take_damage(attack);
             info!("Player health: {}", player_state.get_health());
-            ev_attacked.send(S::attacked_event());
+            ev_attacked.send(S::attacked_event(attack.max(0) as u32));
 
             q_target.get_single().unwrap().translation
         };
@@ -364,13 +377,11 @@ fn check_lose_condition(
     player_state: Res<PlayerState>,
     mut state: ResMut<NextState<GameState>>,
 ) {
-    for _ in ev_attacked
-        .iter()
-        .filter(|ev| **ev == AttackedEvent::Player)
-    {
+    for _ in ev_attacked.iter() {
         if player_state.get_health() <= 0 {
             info!("Lose!");
             state.set(GameState::Lose);
+            break;
         }
     }
 }
@@ -380,13 +391,11 @@ fn check_win_condition(
     opponent_state: Res<OpponentState>,
     mut state: ResMut<NextState<GameState>>,
 ) {
-    for _ in ev_attacked
-        .iter()
-        .filter(|ev| **ev == AttackedEvent::Opponent)
-    {
+    for _ in ev_attacked.iter() {
         if opponent_state.get_health() <= 0 {
             info!("Win!");
             state.set(GameState::Win);
+            break;
         }
     }
 }
@@ -852,7 +861,19 @@ fn setup_board(
     player_state: Res<PlayerState>,
     mut state: ResMut<NextState<GameState>>,
 ) {
+    const ATTACK_TARGET_HEIGHT: f32 = 1.0;
+    const BLOCK_POSITIONS: [(f32, f32); 8] = [
+        (0.0, BLOCK_SIZE),
+        (BLOCK_SIZE, BLOCK_SIZE),
+        (BLOCK_SIZE, 0.0),
+        (BLOCK_SIZE, -BLOCK_SIZE),
+        (0.0, -BLOCK_SIZE),
+        (-BLOCK_SIZE, -BLOCK_SIZE),
+        (-BLOCK_SIZE, 0.0),
+        (-BLOCK_SIZE, BLOCK_SIZE),
+    ];
     const DIAL_OFFSET: f32 = -7.5;
+    const SIZE: u32 = 12;
 
     commands.spawn(PbrBundle {
         mesh: board_assets.mesh.clone(),
@@ -878,14 +899,44 @@ fn setup_board(
             },));
         });
 
-    commands.spawn((
-        TransformBundle {
-            local: Transform::from_xyz(0.0, 3.0, -6.0),
-            ..default()
-        },
-        AttackTarget,
-        Opponent,
-    ));
+    commands
+        .spawn((
+            SpatialBundle {
+                transform: Transform::from_xyz(0.0, ATTACK_TARGET_HEIGHT, -6.0),
+                ..default()
+            },
+            AttackTarget,
+            Opponent,
+        ))
+        .with_children(|parent| {
+            let mut rng = rand::thread_rng();
+            let mut i = 0;
+            let mut y = -ATTACK_TARGET_HEIGHT;
+
+            for block_index in 0..SIZE {
+                if i == BLOCK_POSITIONS.len() {
+                    i = 0;
+                    y += BLOCK_SIZE;
+                }
+
+                let (x, z) = BLOCK_POSITIONS[i];
+                let rotation = rng.gen_range(0..4) as f32 * 90.0;
+
+                parent.spawn((
+                    PbrBundle {
+                        mesh: board_assets.block_mesh.clone(),
+                        material: board_assets.block_material.clone(),
+                        transform: Transform::from_xyz(x, y, z)
+                            .with_rotation(Quat::from_rotation_y(rotation.to_radians())),
+                        ..default()
+                    },
+                    Block(block_index),
+                    Opponent,
+                ));
+
+                i += 1;
+            }
+        });
 
     commands.spawn((
         TransformBundle {
@@ -997,6 +1048,36 @@ fn spend_power(
                 power.available = false;
                 *material = card_assets.gem_empty_material.clone();
             }
+        }
+    }
+}
+
+fn update_player_health(
+    mut commands: Commands,
+    mut ev_attacked: EventReader<AttackedEvent>,
+    q_block: Query<(Entity, &Block), With<Opponent>>,
+) {
+    let mut blocks = None;
+
+    for ev in ev_attacked.iter() {
+        match ev {
+            AttackedEvent::Opponent(damage) => {
+                if blocks.is_none() {
+                    let mut blocks_vec = q_block.iter().collect::<Vec<_>>();
+
+                    blocks_vec.sort_by(|a, b| a.1 .0.partial_cmp(&b.1 .0).unwrap());
+                    blocks = Some(blocks_vec);
+                }
+
+                if let Some(blocks) = blocks.as_mut() {
+                    for _ in 0..*damage {
+                        if let Some((entity, _)) = blocks.pop() {
+                            commands.entity(entity).despawn_recursive();
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }

@@ -110,8 +110,8 @@ impl Default for OpponentState {
 }
 
 impl PlayableState for OpponentState {
-    fn attacked_event() -> AttackedEvent {
-        AttackedEvent::Opponent
+    fn attacked_event(damage: u32) -> AttackedEvent {
+        AttackedEvent::Opponent(damage)
     }
 
     fn deck_size(&self) -> u32 {
@@ -158,7 +158,7 @@ impl PlayableState for OpponentState {
 }
 
 pub trait PlayableState: Resource {
-    fn attacked_event() -> AttackedEvent;
+    fn attacked_event(damage: u32) -> AttackedEvent;
     fn deck_size(&self) -> u32;
     fn draw_card(&mut self) -> Option<CardType>;
     fn draw_count(&self) -> u32;
@@ -186,8 +186,8 @@ pub struct PlayerState {
 }
 
 impl PlayableState for PlayerState {
-    fn attacked_event() -> AttackedEvent {
-        AttackedEvent::Player
+    fn attacked_event(damage: u32) -> AttackedEvent {
+        AttackedEvent::Player(damage)
     }
 
     fn deck_size(&self) -> u32 {
