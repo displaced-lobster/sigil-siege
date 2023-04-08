@@ -337,7 +337,7 @@ fn attack<C: Component, A: Board, B: Board, S: PlayableState>(
 
         let attack_tween = Tween::new(
             EaseFunction::QuadraticIn,
-            Duration::from_millis(100),
+            Duration::from_millis(200),
             TransformPositionLens {
                 start: transform.translation,
                 end: target,
@@ -345,7 +345,7 @@ fn attack<C: Component, A: Board, B: Board, S: PlayableState>(
         );
         let return_tween = Tween::new(
             EaseFunction::QuadraticOut,
-            Duration::from_millis(250),
+            Duration::from_millis(500),
             TransformPositionLens {
                 start: target,
                 end: transform.translation,
@@ -423,7 +423,7 @@ fn draw_cards(
             let end = Vec3::new(x, CARD_HALF_THICKNESS, HAND_Z);
             let tween = Tween::new(
                 EaseFunction::QuadraticInOut,
-                Duration::from_millis(250),
+                Duration::from_millis(500),
                 TransformPositionLens {
                     start: transform.translation,
                     end,
@@ -690,7 +690,7 @@ fn play_opponent_cards(
         let transform = transform.with_translation(start);
         let tween = Tween::new(
             EaseFunction::QuadraticInOut,
-            Duration::from_millis(300),
+            Duration::from_millis(600),
             TransformPositionLens { start, end },
         )
         .with_completed_event(TWEEN_EVENT_REMOVE_PERFORM_ACTION);
