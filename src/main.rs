@@ -90,7 +90,7 @@ fn main() {
         .add_system(reset_dial.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(reset_hand.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(
-            reset_power::<Opponent, OpponentState>.in_schedule(OnEnter(GameState::OpponentTurn)),
+            reset_power::<Opponent, OpponentState>.in_schedule(OnEnter(GameState::OpponentPlayCards)),
         )
         .add_system(reset_power::<Player, PlayerState>.in_schedule(OnEnter(GameState::PlayerTurn)))
         .add_system(
