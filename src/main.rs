@@ -451,8 +451,6 @@ fn apply_ability<C: Component, B: Board>(
             (None, None)
         };
 
-        info!("affects: {:?}, effect: {:?}", affects, effect);
-
         if let (Some(affects), Some(effect)) = (affects, effect) {
             for entity in affects {
                 if let Ok((_, mut attack, mut health)) = q_cards.get_mut(entity) {
@@ -469,7 +467,6 @@ fn apply_damage(mut commands: Commands, mut q_damage: Query<(Entity, &Damage, &m
         commands.entity(entity).remove::<Damage>();
 
         if health.0 <= 0 {
-            info!("Card killed by damage");
             commands.entity(entity).insert(Killed);
         }
     }
@@ -487,17 +484,13 @@ fn attack<C: Component, A: Board, B: Board, S: PlayableState>(
 ) {
     for (entity, attack, transform) in q_attacking.iter() {
         let attack = attack.get();
-        info!("Attacking with {}", attack);
 
         let target = if let Some(across) = attacking.across(attacked.state(), entity) {
-            info!("Attacking across");
             commands.entity(across.entity).insert(Damage(attack));
 
             q_attacked.get(across.entity).unwrap().translation
         } else {
-            info!("Attacking player");
             player_state.take_damage(attack);
-            info!("Player health: {}", player_state.get_health());
             ev_attacked.send(S::attacked_event(attack.max(0) as u32));
 
             q_target.get_single().unwrap().translation
@@ -972,7 +965,6 @@ fn play_card(
                     let index = placeholder.0;
 
                     if board.unoccupied(index) {
-                        info!("Playing card at index {}", index);
                         *material = placeholder_materials.invisable.clone();
                         transform.translation = placeholder_transform.translation;
                         board.place(index, picked_entity, *card_type);
@@ -1092,7 +1084,6 @@ fn remove_killed<C: Component, B: Board>(
     mut q_cards: Query<(&mut Attack, &mut Health), (With<C>, Without<Killed>)>,
 ) {
     if let Some((entity, card_type)) = q_killed.iter().next() {
-        info!("Killed card found");
         let affects = card_type.affects(entity, board.state());
         let effect = card_type.effect();
 
@@ -1101,7 +1092,6 @@ fn remove_killed<C: Component, B: Board>(
                 effect.remove(&mut attack, &mut health);
 
                 if health.0 <= 0 {
-                    info!("Card killed by side-effect");
                     commands.entity(entity).insert(Killed);
                 }
             }
@@ -1394,7 +1384,6 @@ fn update_sigils<A: Attribute + Component, S: Sigil + Component>(
     q_sigil: Query<(Entity, &Parent, &S), Without<A>>,
 ) {
     for (entity, attribute) in q_card.iter() {
-        info!("Changes detected for {:?}", attribute);
         let mut sigils = q_sigil
             .iter()
             .filter(|(_, parent, _)| parent.get() == entity)
@@ -1408,13 +1397,11 @@ fn update_sigils<A: Attribute + Component, S: Sigil + Component>(
         let sigil_count = sigils.len() as i32;
 
         if sigil_count == attribute.get() {
-            info!("No changes needed for {:?}", attribute);
             continue;
         }
 
         match sigil_count > attribute.get() {
             true => {
-                info!("Removing sigils for {:?}", attribute);
                 while !sigils.is_empty() && sigils.len() as i32 > attribute.get() {
                     if let Some((entity, _)) = sigils.pop() {
                         commands.entity(entity).despawn_recursive();
@@ -1422,7 +1409,6 @@ fn update_sigils<A: Attribute + Component, S: Sigil + Component>(
                 }
             }
             false => {
-                info!("Adding sigils for {:?}", attribute);
                 let offset = S::direction() * sigil_count as f32 * S::width() - S::offset_x();
                 let children = (0..attribute.get() - sigil_count)
                     .map(|i| {

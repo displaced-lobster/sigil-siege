@@ -34,7 +34,6 @@ pub trait Board: Resource {
         self.state().others_of_type(entity, card_type).collect()
     }
     fn place(&mut self, index: u32, entity: Entity, card_type: CardType) {
-        info!("Placing {:?} at {}", card_type, index);
         self.state_mut().place(index, entity, card_type);
     }
     fn remove(&mut self, entity: Entity) {
@@ -65,7 +64,6 @@ impl BoardState {
             .find(|(_, e)| e.is_some() && e.unwrap().entity == entity);
 
         if let Some((index, _)) = index {
-            info!("Checking adjacent for index {}", index);
             let left = if index == 0 {
                 None
             } else {
@@ -114,7 +112,6 @@ impl BoardState {
             .filter(|(_, e)| e.is_some())
             .find(|(_, e)| e.unwrap().entity == entity)
         {
-            info!("Removing index {} from board", i);
             self.board[i] = None;
         }
     }
