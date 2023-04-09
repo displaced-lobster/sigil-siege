@@ -1,5 +1,4 @@
-use bevy::{input::common_conditions::input_toggle_active, prelude::*};
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy::prelude::*;
 use bevy_mod_picking::{
     HoverEvent,
     InteractablePickingPlugin,
@@ -57,9 +56,6 @@ fn main() {
         .add_plugin(PickingPlugin)
         .add_plugin(InteractablePickingPlugin)
         .add_plugin(TweeningPlugin)
-        .add_plugin(
-            WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
-        )
         .insert_resource(ClearColor(Color::rgb(0.06, 0.06, 0.08)))
         .add_startup_system(setup)
         .add_system(
