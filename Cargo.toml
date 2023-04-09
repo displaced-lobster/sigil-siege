@@ -11,3 +11,8 @@ bevy-inspector-egui = "0.18"
 bevy_mod_picking = "0.12"
 bevy_tweening = "0.7"
 rand = "0.8.5"
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
