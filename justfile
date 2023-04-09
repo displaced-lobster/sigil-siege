@@ -10,3 +10,8 @@ check:
 # Runs rustfmt
 fmt:
     cargo +nightly fmt
+
+# Zip the dist directory
+zip:
+    cd dist
+    zip -r dist.zip dist/*
