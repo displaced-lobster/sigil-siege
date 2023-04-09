@@ -90,8 +90,8 @@ impl Default for OpponentState {
             available_power: 0,
             deck_state: DeckState::new(12),
             health: 12,
-            max_power: 4,
-            power: 0,
+            max_power: 5,
+            power: 1,
             turn: 0,
         }
     }

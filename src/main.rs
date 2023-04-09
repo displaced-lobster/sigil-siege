@@ -688,7 +688,7 @@ fn click_play_button(
                 commands.insert_resource(PlayerState::default().with_deck_size(config.deck_size));
                 commands.insert_resource(
                     OpponentState::default()
-                        .with_deck_size(config.deck_size)
+                        .with_deck_size(config.deck_size + 10)
                         .with_health(config.opponent_hp as i32),
                 );
 
