@@ -49,3 +49,9 @@ pub struct PlayButton;
 
 #[derive(Component)]
 pub struct ActiveSelection;
+
+#[derive(Component)]
+pub enum GameOverText {
+    Win,
+    Lose,
+}

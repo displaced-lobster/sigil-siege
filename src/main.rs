@@ -328,6 +328,24 @@ fn setup(
                     ..default()
                 },
             ));
+
+            parent.spawn((
+                GameOverText::Lose,
+                PbrBundle {
+                    mesh: asset_server.load("models/you-lost-text.glb#Mesh0/Primitive0"),
+                    visibility: Visibility::Hidden,
+                    ..default()
+                },
+            ));
+
+            parent.spawn((
+                GameOverText::Win,
+                PbrBundle {
+                    mesh: asset_server.load("models/you-won-text.glb#Mesh0/Primitive0"),
+                    visibility: Visibility::Hidden,
+                    ..default()
+                },
+            ));
         });
 
     commands.insert_resource(MenuMaterials {
@@ -342,7 +360,6 @@ fn setup(
 
     commands.spawn((
         Camera3dBundle {
-            // transform: Transform::from_xyz(0.0, 9.0, 15.0).looking_at(Vec3::ZERO, Vec3::Y),
             transform: Transform::from_translation(menu_translation + CAMERA_MENU_OFFSET)
                 .looking_at(menu_translation, Vec3::Y),
             ..default()
@@ -530,28 +547,84 @@ fn attack_finished<C: Component>(
 }
 
 fn check_lose_condition(
+    mut commands: Commands,
     mut ev_attacked: EventReader<AttackedEvent>,
     player_state: Res<PlayerState>,
     mut state: ResMut<NextState<GameState>>,
+    q_menu: Query<&Transform, (With<Menu>, Without<Camera>)>,
+    mut q_camera: Query<(Entity, &mut Transform), With<Camera>>,
+    mut q_text: Query<(&GameOverText, &mut Visibility), (Without<Camera>, Without<Menu>)>,
 ) {
     for _ in ev_attacked.iter() {
         if player_state.get_health() <= 0 {
-            info!("Lose!");
             state.set(GameState::Lose);
+
+            for (text, mut visibility) in q_text.iter_mut() {
+                match text {
+                    GameOverText::Lose => *visibility = Visibility::Visible,
+                    GameOverText::Win => *visibility = Visibility::Hidden,
+                }
+            }
+
+            let menu = q_menu.single();
+            let end_transform = Transform::from_translation(menu.translation + CAMERA_MENU_OFFSET)
+                .looking_at(menu.translation, Vec3::Y);
+            let (entity, mut transform) = q_camera.single_mut();
+
+            *transform = transform.with_rotation(end_transform.rotation);
+
+            let tween = Tween::new(
+                EaseFunction::QuadraticOut,
+                Duration::from_secs(1),
+                TransformPositionLens {
+                    start: transform.translation,
+                    end: end_transform.translation,
+                },
+            );
+
+            commands.entity(entity).insert(Animator::new(tween));
             break;
         }
     }
 }
 
 fn check_win_condition(
+    mut commands: Commands,
     mut ev_attacked: EventReader<AttackedEvent>,
     opponent_state: Res<OpponentState>,
     mut state: ResMut<NextState<GameState>>,
+    q_menu: Query<&Transform, (With<Menu>, Without<Camera>)>,
+    mut q_camera: Query<(Entity, &mut Transform), With<Camera>>,
+    mut q_text: Query<(&GameOverText, &mut Visibility), (Without<Camera>, Without<Menu>)>,
 ) {
     for _ in ev_attacked.iter() {
         if opponent_state.get_health() <= 0 {
-            info!("Win!");
             state.set(GameState::Win);
+
+            for (text, mut visibility) in q_text.iter_mut() {
+                match text {
+                    GameOverText::Lose => *visibility = Visibility::Hidden,
+                    GameOverText::Win => *visibility = Visibility::Visible,
+                }
+            }
+
+            let menu = q_menu.single();
+            let end_transform = Transform::from_translation(menu.translation + CAMERA_MENU_OFFSET)
+                .looking_at(menu.translation, Vec3::Y);
+            let (entity, mut transform) = q_camera.single_mut();
+
+            *transform = transform.with_rotation(end_transform.rotation);
+
+            let tween = Tween::new(
+                EaseFunction::QuadraticOut,
+                Duration::from_secs(1),
+                TransformPositionLens {
+                    start: transform.translation,
+                    end: end_transform.translation,
+                },
+            );
+
+            commands.entity(entity).insert(Animator::new(tween));
             break;
         }
     }
