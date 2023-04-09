@@ -6,7 +6,6 @@ use bevy_mod_picking::{
     PickingCameraBundle,
     PickingEvent,
     PickingPlugin,
-    SelectionEvent,
 };
 use bevy_tweening::{
     lens::TransformPositionLens,
@@ -664,7 +663,7 @@ fn click_config_button(
     >,
 ) {
     for ev in ev_pick.iter() {
-        if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
+        if let PickingEvent::Clicked(e) = ev {
             if let Ok((entity, mut material)) = q_config.get_mut(*e) {
                 for (entity, mut material) in q_active.iter_mut() {
                     *material = materials.button_material.clone();
@@ -689,7 +688,7 @@ fn click_play_button(
     const CAMERA_BOARD_OFFSET: Vec3 = Vec3::new(0.0, 9.0, 15.0);
 
     for ev in ev_pick.iter() {
-        if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
+        if let PickingEvent::Clicked(e) = ev {
             if q_play_btn.get(*e).is_ok() {
                 let config = q_selection.single().game_config();
 
@@ -879,7 +878,7 @@ fn end_turn(
     mut q_dial: Query<&mut Transform, With<TurnDial>>,
 ) {
     for ev in ev_pick.iter() {
-        if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
+        if let PickingEvent::Clicked(e) = ev {
             if let Ok(mut transform) = q_dial.get_mut(*e) {
                 *transform = transform.with_rotation(Quat::from_rotation_y(180.0_f32.to_radians()));
                 state.set(GameState::PlayerAttacking);
@@ -935,7 +934,7 @@ fn pick_from_hand(
     mut q_picked: Query<(Entity, &mut Transform), With<Picked>>,
 ) {
     for ev in ev_pick.iter() {
-        if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
+        if let PickingEvent::Clicked(e) = ev {
             if let Ok((cost, mut transform)) = q_hand.get_mut(*e) {
                 if cost.0 <= player_state.available_power {
                     for (entity, mut picked_transform) in q_picked.iter_mut() {
@@ -966,7 +965,7 @@ fn play_card(
 ) {
     for ev in ev_pick.iter() {
         if let Ok((picked_entity, hand, card_type, mut transform)) = q_picked.get_single_mut() {
-            if let PickingEvent::Selection(SelectionEvent::JustSelected(e)) = ev {
+            if let PickingEvent::Clicked(e) = ev {
                 if let Ok((placeholder, placeholder_transform, mut material)) =
                     q_placeholder.get_mut(*e)
                 {
