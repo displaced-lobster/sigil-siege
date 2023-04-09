@@ -40,7 +40,6 @@ const ATTACK_TARGET_HEIGHT: f32 = 1.0;
 const CAMERA_MENU_OFFSET: Vec3 = Vec3::new(0.0, 9.0, 1.0);
 const HAND_Z: f32 = 6.5;
 const TWEEN_EVENT_REMOVE_PERFORM_ACTION: u64 = 1;
-const TWEEN_EVENT_CAMERA_MOVE_TO_BOARD: u64 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, SystemSet)]
 enum PlayCardSystemSet {
@@ -86,7 +85,6 @@ fn main() {
         .add_system(click_config_button)
         .add_system(click_play_button)
         .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
-        .add_system(draw_opponent_cards.in_schedule(OnEnter(GameState::OpponentPlayCards)))
         .add_system(end_turn.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(end_turn_opponent.in_set(OnUpdate(GameState::OpponentTurn)))
         .add_system(hover_button)
@@ -548,12 +546,11 @@ fn attack_finished<C: Component>(
 }
 
 fn check_lose_condition(
-    mut commands: Commands,
     mut ev_attacked: EventReader<AttackedEvent>,
     player_state: Res<PlayerState>,
     mut state: ResMut<NextState<GameState>>,
     q_menu: Query<&Transform, (With<Menu>, Without<Camera>)>,
-    mut q_camera: Query<(Entity, &mut Transform), With<Camera>>,
+    mut q_camera: Query<&mut Transform, With<Camera>>,
     mut q_text: Query<(&GameOverText, &mut Visibility), (Without<Camera>, Without<Menu>)>,
 ) {
     for _ in ev_attacked.iter() {
@@ -568,34 +565,22 @@ fn check_lose_condition(
             }
 
             let menu = q_menu.single();
-            let end_transform = Transform::from_translation(menu.translation + CAMERA_MENU_OFFSET)
+            let mut transform = q_camera.single_mut();
+
+            *transform = Transform::from_translation(menu.translation + CAMERA_MENU_OFFSET)
                 .looking_at(menu.translation, Vec3::Y);
-            let (entity, mut transform) = q_camera.single_mut();
 
-            *transform = transform.with_rotation(end_transform.rotation);
-
-            let tween = Tween::new(
-                EaseFunction::QuadraticOut,
-                Duration::from_secs(1),
-                TransformPositionLens {
-                    start: transform.translation,
-                    end: end_transform.translation,
-                },
-            );
-
-            commands.entity(entity).insert(Animator::new(tween));
             break;
         }
     }
 }
 
 fn check_win_condition(
-    mut commands: Commands,
     mut ev_attacked: EventReader<AttackedEvent>,
     opponent_state: Res<OpponentState>,
     mut state: ResMut<NextState<GameState>>,
     q_menu: Query<&Transform, (With<Menu>, Without<Camera>)>,
-    mut q_camera: Query<(Entity, &mut Transform), With<Camera>>,
+    mut q_camera: Query<&mut Transform, With<Camera>>,
     mut q_text: Query<(&GameOverText, &mut Visibility), (Without<Camera>, Without<Menu>)>,
 ) {
     for _ in ev_attacked.iter() {
@@ -610,22 +595,11 @@ fn check_win_condition(
             }
 
             let menu = q_menu.single();
-            let end_transform = Transform::from_translation(menu.translation + CAMERA_MENU_OFFSET)
+            let mut transform = q_camera.single_mut();
+
+            *transform = Transform::from_translation(menu.translation + CAMERA_MENU_OFFSET)
                 .looking_at(menu.translation, Vec3::Y);
-            let (entity, mut transform) = q_camera.single_mut();
 
-            *transform = transform.with_rotation(end_transform.rotation);
-
-            let tween = Tween::new(
-                EaseFunction::QuadraticOut,
-                Duration::from_secs(1),
-                TransformPositionLens {
-                    start: transform.translation,
-                    end: end_transform.translation,
-                },
-            );
-
-            commands.entity(entity).insert(Animator::new(tween));
             break;
         }
     }
@@ -713,7 +687,7 @@ fn click_play_button(
     mut ev_pick: EventReader<PickingEvent>,
     mut state: ResMut<NextState<GameState>>,
     q_play_btn: Query<With<PlayButton>>,
-    mut q_camera: Query<(Entity, &mut Transform), With<Camera>>,
+    mut q_camera: Query<&mut Transform, With<Camera>>,
     q_selection: Query<&MenuSelection, With<ActiveSelection>>,
 ) {
     const CAMERA_BOARD_OFFSET: Vec3 = Vec3::new(0.0, 9.0, 15.0);
@@ -730,23 +704,11 @@ fn click_play_button(
                         .with_health(config.opponent_hp as i32),
                 );
 
-                let (camera, mut transform) = q_camera.single_mut();
-                let end_transform = Transform::from_translation(CAMERA_BOARD_OFFSET)
+                let mut transform = q_camera.single_mut();
+
+                *transform = Transform::from_translation(CAMERA_BOARD_OFFSET)
                     .looking_at(Vec3::ZERO, Vec3::Y);
 
-                *transform = transform.with_rotation(end_transform.rotation);
-
-                let tween = Tween::new(
-                    EaseFunction::QuadraticOut,
-                    Duration::from_secs(1),
-                    TransformPositionLens {
-                        start: transform.translation,
-                        end: CAMERA_BOARD_OFFSET,
-                    },
-                )
-                .with_completed_event(TWEEN_EVENT_CAMERA_MOVE_TO_BOARD);
-
-                commands.entity(camera).insert(Animator::new(tween));
                 state.set(GameState::StartGame);
             }
         }
@@ -808,11 +770,6 @@ fn draw_cards(
             hand_size += 1;
         }
     }
-}
-
-fn draw_opponent_cards(mut opponent_state: ResMut<OpponentState>) {
-    opponent_state.draw_cards();
-    opponent_state.turn += 1;
 }
 
 fn hover_button(
@@ -951,7 +908,7 @@ fn mark_cards_to_draw(
     q_deck: Query<(Entity, &Deck), Without<Hand>>,
     q_hand: Query<With<Hand>>,
 ) {
-    let hand_size = q_hand.iter().count() as u32;
+    let mut hand_size = q_hand.iter().count() as u32;
 
     if hand_size >= player_state.max_hand_size {
         return;
@@ -964,9 +921,13 @@ fn mark_cards_to_draw(
     sorted_deck.sort_by(|(_, deck_a), (_, deck_b)| deck_a.0.partial_cmp(&deck_b.0).unwrap());
 
     for _ in 0..draw_count {
-        if let Some((entity, __)) = sorted_deck.pop() {
-            commands.entity(entity).insert(Draw);
+        if hand_size < player_state.max_hand_size {
+            if let Some((entity, __)) = sorted_deck.pop() {
+                commands.entity(entity).insert(Draw);
+            }
         }
+
+        hand_size += 1;
     }
 }
 
