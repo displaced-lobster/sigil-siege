@@ -30,15 +30,15 @@ impl MenuSelection {
         match self {
             MenuSelection::Small => GameConfig {
                 deck_size: 12,
-                opponent_hp: 20,
+                opponent_hp: 10,
             },
             MenuSelection::Medium => GameConfig {
                 deck_size: 24,
-                opponent_hp: 48,
+                opponent_hp: 20,
             },
             MenuSelection::Large => GameConfig {
                 deck_size: 36,
-                opponent_hp: 60,
+                opponent_hp: 30,
             },
         }
     }
