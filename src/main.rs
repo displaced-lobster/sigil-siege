@@ -145,7 +145,6 @@ fn setup(
         base_color: Color::WHITE,
         base_color_texture: Some(asset_server.load("textures/stone-base-color.png")),
         perceptual_roughness: 1.0,
-        normal_map_texture: Some(asset_server.load("textures/stone-normal.png")),
         reflectance: 0.0,
         ..default()
     });
@@ -191,11 +190,6 @@ fn setup(
     let card_material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
         base_color_texture: Some(asset_server.load("textures/card-base-color.png")),
-        perceptual_roughness: 1.0,
-        metallic: 1.0,
-        metallic_roughness_texture: Some(asset_server.load("textures/card-metallic-roughness.png")),
-        flip_normal_map_y: true,
-        normal_map_texture: Some(asset_server.load("textures/card-normal.png")),
         reflectance: 0.0,
         ..default()
     });
