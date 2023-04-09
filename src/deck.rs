@@ -67,15 +67,18 @@ pub struct OpponentState {
 
 impl OpponentState {
     pub fn can_play_card(&self) -> bool {
-        self.deck_state.cards
+        self.deck_state
+            .cards
             .iter()
             .any(|card| self.available_power >= card.attributes().cost as i32)
     }
 
     pub fn play_card(&mut self) -> Option<CardType> {
-        let card_index = self.deck_state.cards.iter().position(|card| {
-            self.available_power >= card.attributes().cost as i32
-        })?;
+        let card_index = self
+            .deck_state
+            .cards
+            .iter()
+            .position(|card| self.available_power >= card.attributes().cost as i32)?;
 
         Some(self.deck_state.cards.remove(card_index))
     }
