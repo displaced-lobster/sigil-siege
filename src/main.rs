@@ -81,6 +81,7 @@ fn main() {
         .add_system(attack_finished::<Player>.in_set(OnUpdate(GameState::PlayerAttacking)))
         .add_system(check_lose_condition.run_if(resource_exists::<PlayerState>()))
         .add_system(check_win_condition.run_if(resource_exists::<OpponentState>()))
+        .add_system(cleanup_game.in_schedule(OnEnter(GameState::StartGame)))
         .add_system(cleanup_system)
         .add_system(click_config_button)
         .add_system(click_play_button)
@@ -627,6 +628,52 @@ fn check_win_condition(
             commands.entity(entity).insert(Animator::new(tween));
             break;
         }
+    }
+}
+
+fn cleanup_game(
+    mut commands: Commands,
+    q_attack_target: Query<Entity, With<AttackTarget>>,
+    q_card: Query<Entity, (With<CardType>, Without<AttackTarget>)>,
+    q_deck: Query<Entity, (With<Deck>, Without<AttackTarget>, Without<CardType>)>,
+    q_health: Query<
+        Entity,
+        (
+            With<PlayerHealth>,
+            Without<AttackTarget>,
+            Without<CardType>,
+            Without<Deck>,
+        ),
+    >,
+    q_power: Query<
+        Entity,
+        (
+            With<Power>,
+            Without<AttackTarget>,
+            Without<CardType>,
+            Without<Deck>,
+            Without<PlayerHealth>,
+        ),
+    >,
+) {
+    for entity in q_attack_target.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    for entity in q_card.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    for entity in q_deck.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    for entity in q_health.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    for entity in q_power.iter() {
+        commands.entity(entity).despawn_recursive();
     }
 }
 
