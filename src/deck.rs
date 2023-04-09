@@ -59,6 +59,7 @@ impl DeckState {
 pub struct OpponentState {
     pub available_power: i32,
     deck_state: DeckState,
+    hand: Vec<CardType>,
     health: i32,
     pub max_power: u32,
     pub power: u32,
@@ -84,14 +85,23 @@ impl OpponentState {
     }
 }
 
+impl OpponentState {
+    pub fn draw_cards(&mut self) {
+        while self.hand.len() < 6 && !self.deck_state.cards.is_empty() {
+            self.hand.push(self.deck_state.draw().unwrap());
+        }
+    }
+}
+
 impl Default for OpponentState {
     fn default() -> Self {
         Self {
             available_power: 0,
             deck_state: DeckState::new(12),
+            hand: Vec::new(),
             health: 12,
             max_power: 5,
-            power: 1,
+            power: 0,
             turn: 0,
         }
     }
@@ -176,6 +186,7 @@ pub struct PlayerState {
     pub max_hand_size: u32,
     pub max_power: u32,
     pub power: u32,
+    pub sent_to_menu: bool,
     pub turn: u32,
 }
 
@@ -250,6 +261,7 @@ impl Default for PlayerState {
             max_hand_size: 5,
             max_power: 5,
             power: 0,
+            sent_to_menu: false,
             turn: 0,
         }
     }

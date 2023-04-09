@@ -80,8 +80,11 @@ fn main() {
         .add_system(click_config_button)
         .add_system(click_play_button)
         .add_system(draw_cards.in_set(OnUpdate(GameState::PlayerTurn)))
+        .add_system(draw_cards_opponent.in_schedule(OnEnter(GameState::OpponentPlayCards)))
         .add_system(end_turn.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(end_turn_opponent.in_set(OnUpdate(GameState::OpponentTurn)))
+        .add_system(game_over.in_set(OnUpdate(GameState::Lose)))
+        .add_system(game_over.in_set(OnUpdate(GameState::Win)))
         .add_system(hover_button)
         .add_system(hover_card_placeholder.in_set(OnUpdate(GameState::PlayerTurn)))
         .add_system(hover_dial.in_set(OnUpdate(GameState::PlayerTurn)))
@@ -531,8 +534,6 @@ fn check_lose_condition(
     mut ev_attacked: EventReader<AttackedEvent>,
     player_state: Res<PlayerState>,
     mut state: ResMut<NextState<GameState>>,
-    q_menu: Query<&Transform, (With<Menu>, Without<Camera>)>,
-    mut q_camera: Query<&mut Transform, With<Camera>>,
     mut q_text: Query<(&GameOverText, &mut Visibility), (Without<Camera>, Without<Menu>)>,
 ) {
     for _ in ev_attacked.iter() {
@@ -546,12 +547,6 @@ fn check_lose_condition(
                 }
             }
 
-            let menu = q_menu.single();
-            let mut transform = q_camera.single_mut();
-
-            *transform = Transform::from_translation(menu.translation + CAMERA_MENU_OFFSET)
-                .looking_at(menu.translation, Vec3::Y);
-
             break;
         }
     }
@@ -561,8 +556,6 @@ fn check_win_condition(
     mut ev_attacked: EventReader<AttackedEvent>,
     opponent_state: Res<OpponentState>,
     mut state: ResMut<NextState<GameState>>,
-    q_menu: Query<&Transform, (With<Menu>, Without<Camera>)>,
-    mut q_camera: Query<&mut Transform, With<Camera>>,
     mut q_text: Query<(&GameOverText, &mut Visibility), (Without<Camera>, Without<Menu>)>,
 ) {
     for _ in ev_attacked.iter() {
@@ -575,12 +568,6 @@ fn check_win_condition(
                     GameOverText::Win => *visibility = Visibility::Visible,
                 }
             }
-
-            let menu = q_menu.single();
-            let mut transform = q_camera.single_mut();
-
-            *transform = Transform::from_translation(menu.translation + CAMERA_MENU_OFFSET)
-                .looking_at(menu.translation, Vec3::Y);
 
             break;
         }
@@ -682,7 +669,7 @@ fn click_play_button(
                 commands.insert_resource(PlayerState::default().with_deck_size(config.deck_size));
                 commands.insert_resource(
                     OpponentState::default()
-                        .with_deck_size(config.deck_size + 10)
+                        .with_deck_size(config.deck_size)
                         .with_health(config.opponent_hp as i32),
                 );
 
@@ -751,6 +738,27 @@ fn draw_cards(
 
             hand_size += 1;
         }
+    }
+}
+
+fn draw_cards_opponent(mut state: ResMut<OpponentState>) {
+    state.draw_cards();
+}
+
+fn game_over(
+    mut player: ResMut<PlayerState>,
+    q_acting: Query<(With<PerformingAction>, Without<Camera>, Without<Menu>)>,
+    q_menu: Query<&Transform, (With<Menu>, Without<Camera>)>,
+    mut q_camera: Query<&mut Transform, With<Camera>>,
+) {
+    if q_acting.iter().next().is_none() && !player.sent_to_menu {
+        player.sent_to_menu = true;
+
+        let menu = q_menu.single();
+        let mut transform = q_camera.single_mut();
+
+        *transform = Transform::from_translation(menu.translation + CAMERA_MENU_OFFSET)
+            .looking_at(menu.translation, Vec3::Y);
     }
 }
 
