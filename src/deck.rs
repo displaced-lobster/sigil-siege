@@ -59,9 +59,7 @@ impl DeckState {
 pub struct OpponentState {
     pub available_power: i32,
     deck_state: DeckState,
-    hand: Vec<CardType>,
     health: i32,
-    pub max_hand_size: u32,
     pub max_power: u32,
     pub power: u32,
     pub turn: u32,
@@ -69,25 +67,17 @@ pub struct OpponentState {
 
 impl OpponentState {
     pub fn can_play_card(&self) -> bool {
-        self.hand
+        self.deck_state.cards
             .iter()
             .any(|card| self.available_power >= card.attributes().cost as i32)
     }
 
-    pub fn draw_cards(&mut self) {
-        let count = self.draw_count();
-
-        for _ in 0..count {
-            if self.max_hand_size > self.hand.len() as u32 {
-                if let Some(card) = self.draw_card() {
-                    self.hand.push(card);
-                }
-            }
-        }
-    }
-
     pub fn play_card(&mut self) -> Option<CardType> {
-        self.hand.pop()
+        let card_index = self.deck_state.cards.iter().position(|card| {
+            self.available_power >= card.attributes().cost as i32
+        })?;
+
+        Some(self.deck_state.cards.remove(card_index))
     }
 }
 
@@ -96,10 +86,8 @@ impl Default for OpponentState {
         Self {
             available_power: 0,
             deck_state: DeckState::new(12),
-            hand: Vec::new(),
             health: 12,
-            max_hand_size: 5,
-            max_power: 6,
+            max_power: 4,
             power: 0,
             turn: 0,
         }
@@ -113,16 +101,6 @@ impl PlayableState for OpponentState {
 
     fn deck_size(&self) -> u32 {
         self.deck_state.size()
-    }
-
-    fn draw_card(&mut self) -> Option<CardType> {
-        self.deck_state.draw()
-    }
-
-    fn draw_count(&self) -> u32 {
-        let count = if self.turn == 0 { 3 } else { 1 };
-
-        count.min(self.deck_size())
     }
 
     fn get_available_power(&self) -> i32 {
@@ -167,8 +145,12 @@ impl PlayableState for OpponentState {
 pub trait PlayableState: Resource {
     fn attacked_event(damage: u32) -> AttackedEvent;
     fn deck_size(&self) -> u32;
-    fn draw_card(&mut self) -> Option<CardType>;
-    fn draw_count(&self) -> u32;
+    fn draw_card(&mut self) -> Option<CardType> {
+        None
+    }
+    fn draw_count(&self) -> u32 {
+        0
+    }
     fn get_available_power(&self) -> i32;
     fn get_health(&self) -> i32;
     fn get_max_power(&self) -> u32;
@@ -208,7 +190,7 @@ impl PlayableState for PlayerState {
     }
 
     fn draw_count(&self) -> u32 {
-        let count = if self.turn == 0 { 3 } else { 1 };
+        let count = if self.turn == 0 { 3 } else { 2 };
 
         count.min(self.deck_size())
     }
