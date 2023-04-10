@@ -1,12 +1,14 @@
 # Sigil Siege
 
-![Screenshot of game play](/screenshots/board-progress.png)
+![Sigil Siege banner](/screenshots/banner.png)
 
 Created for [Bevy game jam #3](https://itch.io/jam/bevy-jam-3). [Play on itch.io](https://displacelobster.itch.io/sigil-siege).
 
-Play a random deck of cards with sigils representing different side affects against an opponent. Just be wary that those sigils that have been given will also be removed if the card leaves the board. The goal is to raze your opponent's tower before they wipe out your health.
+Play a random deck of cards with sigils representing different side effects against an opponent. Just be wary that those sigils that have been given will also be removed if the card leaves the board. The goal is to raze your opponent's tower before they wipe out your health.
 
 Choose a deck size of small, medium, or large to play with more cards but also against an opponent with a larger tower! You will not be granted additional health...
+
+![Screenshot of game play](/screenshots/board-progress.png)
 
 The game is played completely with a mouse.
 
